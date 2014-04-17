@@ -5,9 +5,10 @@ unless defined?(Motion::Project::Config)
 end
 
 Motion::Project::App.setup do |app|
+  index = app.files.rindex { |x| x.index("rm-extensions") }
   %w(
     firebase_ext
-  ).reverse.each do |x|
-    app.files.unshift(File.join(File.dirname(__FILE__), "motion/#{x}.rb"))
+  ).reverse.each_with_index do |x, i|
+    app.files.insert(index + 1 + i, File.join(File.dirname(__FILE__), "motion/#{x}.rb"))
   end
 end
