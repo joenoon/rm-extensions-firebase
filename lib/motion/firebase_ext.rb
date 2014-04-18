@@ -230,10 +230,6 @@ end
 
 module FirebaseExt
 
-  def self.model(&block)
-    Model.create(&block)
-  end
-
   class DataSnapshot
 
     include RMExtensions::CommonMethods
@@ -255,7 +251,7 @@ module FirebaseExt
         @ready = true
         rmext_trigger(:ready)
         # p "ready__"
-        callback.call(self) if callback
+        @callback.call if @callback
       end
     end
 
@@ -357,10 +353,11 @@ module FirebaseExt
       super
     end
 
-    attr_accessor :userInfo
+    attr_accessor :opts, :shortcuts
 
-    def initialize(userInfo=nil)
-      @userInfo = userInfo
+    def initialize(opts=nil)
+      @shortcuts = {}
+      @opts = opts
       setup
     end
 
@@ -376,6 +373,9 @@ module FirebaseExt
       @api = Coordinator.new
       @api.rmext_on(:ready) do
         ready?
+      end
+      if block = self.class.describe_block
+        block.call(self, @opts)
       end
     end
 
@@ -395,24 +395,27 @@ module FirebaseExt
 
     def ready(&block)
       unbind_ready(block.owner)
-      block = RMExtensions::WeakBlock.new(block)
-      on_block = proc do
-        block.call(self)
-      end.weak!
-      block.owner.rmext_ivar(ivar_key, on_block)
-      rmext_on(:ready, &on_block)
+      block.weak!
+      block.owner.rmext_ivar(ivar_key, block)
+      rmext_on(:ready, &block)
       if @api.ready?
-        block.call(self)
+        block.call
       end
       self
     end
 
     def [](*keys)
+      if keys.first && long = (@shortcuts[keys.first.to_sym] || @shortcuts[keys.first.to_s])
+        keys = long
+      end
       @api[*keys]
     end
 
     def []=(*keys, val)
       p "[]=", keys, val
+      if keys.first && long = (@shortcuts[keys.first.to_sym] || @shortcuts[keys.first.to_s])
+        keys = long
+      end
       @api[*keys] = val
     end
 
@@ -420,6 +423,78 @@ module FirebaseExt
       x = new
       block.call(x)
       x
+    end
+
+    def self.describe(&block)
+      @describe_block = block
+    end
+
+    def self.describe_block
+      @describe_block
+    end
+
+    # this is the method you should call
+    def self.get(opts=nil)
+      if opts && existing = get_in_memory(opts)
+        # p "HIT!", opts
+        return existing
+      else
+        # p "MISS!", opts
+        res = new(opts)
+        if opts
+          set_in_memory(opts, res)
+        end
+        res
+      end
+    end
+
+    def self.set_in_memory(key, val)
+      return unless key
+      key = [ className, key ]
+      memory_queue.sync do
+        unless memory.objectForKey(key)
+          memory.setObject(val, forKey:key)
+        end
+      end
+      nil
+    end
+
+    def self.get_in_memory(key)
+      return unless key
+      key = [ className, key ]
+      memory_queue.sync do
+        return memory.objectForKey(key)
+      end
+    end
+
+    def self.memory_queue
+      ::FirebaseExt::Model::Memory.memory_queue
+    end
+
+    def self.memory
+      ::FirebaseExt::Model::Memory.memory
+    end
+
+    module Memory
+      extend self
+
+      def memory
+        Dispatch.once do
+          # stores objects in memory, to form an identity map, so the same
+          # object (by key) is not instantiated twice.
+          @memory = NSMapTable.weakToWeakObjectsMapTable
+        end
+        @memory
+      end
+
+      def memory_queue
+        Dispatch.once do
+          # a queue which all access to @memory will use
+          @memory_queue = Dispatch::Queue.new("#{NSBundle.mainBundle.bundleIdentifier}.FirebaseExt.Model.memory")
+        end
+        @memory_queue
+      end
+
     end
 
   end
