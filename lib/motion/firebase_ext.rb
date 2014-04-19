@@ -534,23 +534,43 @@ module FirebaseExt
       @ready = false
       @models = models.flatten
       @complete_blocks = {}
-      @models.each do |model|
-        @complete_blocks[model] = proc do
-          # p "COMPLETE!"
-          @complete_blocks.delete(model)
-          if @complete_blocks.empty?
-            ready!
+      add_retain
+      if @models.any?
+        @models.each do |model|
+          @complete_blocks[model] = proc do
+            # p "COMPLETE!"
+            @complete_blocks.delete(model)
+            if @complete_blocks.empty?
+              ready!
+            end
           end
         end
+        @complete_blocks.each_pair do |model, block|
+          model.ready_once(&block)
+        end
+      else
+        ready!
       end
-      @complete_blocks.each_pair do |model, block|
-        model.ready_once(&block)
+    end
+
+    def add_retain
+      unless @retained
+        @retained = true
+        retain
+      end
+    end
+
+    def drop_retain
+      if @retained
+        @retained = false
+        release
       end
     end
 
     def ready!
       @ready = true
       rmext_trigger(:ready)
+      drop_retain
     end
 
     def cancel!
@@ -561,6 +581,7 @@ module FirebaseExt
           model.cancel_ready(&blk)
         end
       end
+      drop_retain
     end
 
     def ready?
@@ -578,6 +599,7 @@ module FirebaseExt
 
     def cancel_ready(&block)
       rmext_off(:ready, &block)
+      drop_retain
     end
 
   end
