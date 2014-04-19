@@ -285,7 +285,12 @@ module FirebaseExt
     end
 
     def ready?
-      @watches.values.all?(&:ready?)
+      !!@ready
+    end
+
+    def ready!
+      @ready = true
+      rmext_trigger(:ready)
     end
 
     def stub(name)
@@ -297,8 +302,8 @@ module FirebaseExt
       data.ref = ref
       data.callback = block && RMExtensions::WeakBlock.new(block)
       data.rmext_on(:ready) do
-        if ready?
-          rmext_trigger(:ready)
+        if @watches.values.all?(&:ready?)
+          ready!
           # p "ready__"
         end
       end
@@ -362,17 +367,19 @@ module FirebaseExt
     end
 
     def ready?
-      if @api.ready?
-        rmext_trigger(:ready)
-        true
-      end
+      !!@ready
+    end
+
+    def ready!
+      @ready = true
+      rmext_trigger(:ready)
     end
 
     def setup
       rmext_cleanup
       @api = Coordinator.new
       @api.rmext_on(:ready) do
-        ready?
+        ready!
       end
       if block = self.class.describe_block
         block.call(self, @opts)
@@ -398,10 +405,23 @@ module FirebaseExt
       block.weak!
       block.owner.rmext_ivar(ivar_key, block)
       rmext_on(:ready, &block)
-      if @api.ready?
+      if ready?
         block.call
       end
       self
+    end
+
+    def ready_once(&block)
+      if ready?
+        block.call
+      else
+        rmext_on(:ready, &block)
+      end
+      self
+    end
+
+    def cancel_ready(&block)
+      rmext_off(:ready, &block)
     end
 
     def [](*keys)
@@ -412,7 +432,7 @@ module FirebaseExt
     end
 
     def []=(*keys, val)
-      p "[]=", keys, val
+      # p "[]=", keys, val
       if keys.first && long = (@shortcuts[keys.first.to_sym] || @shortcuts[keys.first.to_s])
         keys = long
       end
@@ -482,7 +502,7 @@ module FirebaseExt
         Dispatch.once do
           # stores objects in memory, to form an identity map, so the same
           # object (by key) is not instantiated twice.
-          @memory = NSMapTable.weakToWeakObjectsMapTable
+          @memory = NSMapTable.strongToWeakObjectsMapTable
         end
         @memory
       end
@@ -495,6 +515,69 @@ module FirebaseExt
         @memory_queue
       end
 
+    end
+
+  end
+
+  class Batch
+
+    include RMExtensions::CommonMethods
+
+    attr_accessor :models
+
+    def dealloc
+      dealloc_inspect
+      super
+    end
+
+    def initialize(*models)
+      @ready = false
+      @models = models.flatten
+      @complete_blocks = {}
+      @models.each do |model|
+        @complete_blocks[model] = proc do
+          # p "COMPLETE!"
+          @complete_blocks.delete(model)
+          if @complete_blocks.empty?
+            ready!
+          end
+        end
+      end
+      @complete_blocks.each_pair do |model, block|
+        model.ready_once(&block)
+      end
+    end
+
+    def ready!
+      @ready = true
+      rmext_trigger(:ready)
+    end
+
+    def cancel!
+      models_outstanding = @complete_blocks.keys.dup
+      while model = models_outstanding.pop
+        if blk = @complete_blocks[model]
+          @complete_blocks.delete(model)
+          model.cancel_ready(&blk)
+        end
+      end
+    end
+
+    def ready?
+      !!@ready
+    end
+
+    def ready_once(&block)
+      if ready?
+        block.call
+      else
+        rmext_once(:ready, &block)
+      end
+      self
+    end
+
+    def cancel_ready(&block)
+      rmext_off(:ready, &block)
     end
 
   end
@@ -518,8 +601,8 @@ module FirebaseExt
     def data=(val)
       @data = val
       if @data
-        @data.ready do |model|
-          ready(model)
+        @data.ready do
+          ready(@data)
         end
       end
       @data
@@ -544,8 +627,8 @@ module FirebaseExt
       @model = val
       reset
       if @model
-        @model.ready do |_model|
-          ready(_model)
+        @model.ready do
+          ready(@model)
         end
       end
       @model
@@ -566,8 +649,8 @@ module FirebaseExt
       end
       @model = val
       if @model
-        @model.ready do |_model|
-          ready(_model)
+        @model.ready do
+          ready(@model)
         end
       end
       @model
