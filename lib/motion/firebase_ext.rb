@@ -140,16 +140,16 @@ class FQuery
     weak_owner = WeakRef.new(owner)
     event_type = EVENT_TYPES_MAP[_event_type]
     raise "event handler is unknown: #{_event_type.inspect}" unless event_type
-    if event_type == FEventTypeValue
-      if initial_snap = $firebase_masters_by_fquery.objectForKey(self)
-        # p "HIT!", description
-        rmext_inline_or_on_main_q do
-          and_then.call(initial_snap)
-        end
-      else
-        # p "MISS!", description
-      end
-    end
+    # if event_type == FEventTypeValue
+    #   if initial_snap = $firebase_masters_by_fquery.objectForKey(self)
+    #     # p "HIT!", description
+    #     rmext_inline_or_on_main_q do
+    #       and_then.call(initial_snap)
+    #     end
+    #   else
+    #     # p "MISS!", description
+    #   end
+    # end
 
     disconnect_block = options[:disconnect]
     raise ":disconnect handler must not accept any arguments" if disconnect_block && disconnect_block.arity > 0
@@ -248,14 +248,16 @@ module FirebaseExt
     def start!
       self.handle = ref.on(:value) do |snap|
         self.value = snap.value
+        @callback.call(self) if @callback
+        @callback = nil
         @ready = true
-        rmext_trigger(:ready)
+        rmext_trigger2(:ready, self)
         # p "ready__"
-        @callback.call if @callback
       end
     end
 
     def stop!
+      @ready = false
       if ref && handle
         ref.off(handle)
       end
@@ -269,15 +271,40 @@ module FirebaseExt
       current
     end
 
+    def attr(keypath)
+      valueForKeyPath(keypath)
+    end
+
+    def valueForKey(key)
+      value[key]
+    end
+
+    def valueForUndefinedKey(key)
+      nil
+    end
+
   end
 
   class Coordinator
 
     include RMExtensions::CommonMethods
 
+    attr_accessor :watches
+
     def dealloc
       dealloc_inspect
       super
+    end
+
+    def clear!
+      @ready = false
+      keys = @watches.keys.dup
+      while name = keys.pop
+        watch = @watches[name]
+        watch.stop!
+      end
+      @watches.clear
+      self
     end
 
     def initialize
@@ -290,28 +317,33 @@ module FirebaseExt
 
     def ready!
       @ready = true
-      rmext_trigger(:ready)
+      rmext_trigger2(:ready, self)
     end
 
     def stub(name)
       @watches[name] ||= DataSnapshot.new
     end
 
-    def watch(name, ref, &block)
-      data = DataSnapshot.new
-      data.ref = ref
-      data.callback = block && RMExtensions::WeakBlock.new(block)
+    def watch_data(name, data)
+      if current = @watches[name]
+        current.stop!
+        current.rmext_off(:ready, self)
+      end
       data.rmext_on(:ready) do
         if @watches.values.all?(&:ready?)
           ready!
           # p "ready__"
         end
       end
-      data.start!
-      if current = @watches[name]
-        current.stop!
-      end
       @watches[name] = data
+    end
+
+    def watch(name, ref, &block)
+      data = DataSnapshot.new
+      data.ref = ref
+      data.callback = block && RMExtensions::WeakBlock.new(block)
+      watch_data(name, data)
+      data.start!
       data
     end
 
@@ -358,10 +390,11 @@ module FirebaseExt
       super
     end
 
-    attr_accessor :opts, :shortcuts
+    attr_accessor :opts
+
+    attr_reader :api
 
     def initialize(opts=nil)
-      @shortcuts = {}
       @opts = opts
       setup
     end
@@ -372,71 +405,104 @@ module FirebaseExt
 
     def ready!
       @ready = true
-      rmext_trigger(:ready)
+      rmext_trigger2(:ready, self)
+      rmext_not_retained
     end
 
     def setup
       rmext_cleanup
       @api = Coordinator.new
       @api.rmext_on(:ready) do
-        ready!
+        self.ready!
       end
       if block = self.class.describe_block
         block.call(self, @opts)
       end
     end
 
+    def reload
+      @ready = false
+      old_watches = @api.watches # keep them in memory momentarily
+      setup
+      old_watches = nil # let them go
+      self
+    end
+
     def watch(name, ref, &block)
       @api.watch(name, ref, &block)
+    end
+
+    # combine the watches of another model into this model,
+    # which will affect ready.  should be done before ready has
+    # has a chance to be triggered.  inserts new watches
+    # with arrays using the arbitary name given and the existing key
+    # on the other model's watch.  they are not meant to be accessed
+    # by [] syntax.  the model is assigned to an ivar of the name 
+    # given, which an accessor can be created by the user to access.
+    #
+    # Book
+    #   attr_reader :author
+    #   model.watch(:book, ref) do |data|
+    #     model.combine(:author, Author.get(data[:author_id]))
+    #   end
+    # ...
+    # book = Book.get(1)
+    # book[:book, :name] #=> "My Book"
+    # book.author[:author, :name] #=> "Joe Noon"
+    def combine(name, model)
+      model.api.watches.each_pair do |k, data|
+        @api.watch_data([name, k], data)
+      end
+      rmext_ivar(name, model)
     end
 
     def ivar_key
       "firebasemodel_#{object_id}_readyblk"
     end
 
-    def unbind_ready(context)
+    def unbind_always(context)
       if existing = context.rmext_ivar(ivar_key)
         rmext_off(:ready, self, &existing)
       end
     end
 
-    def ready(&block)
-      unbind_ready(block.owner)
+    def always(&block)
+      unbind_always(block.owner)
       block.weak!
       block.owner.rmext_ivar(ivar_key, block)
       rmext_on(:ready, &block)
       if ready?
-        block.call
+        block.call(self)
       end
       self
     end
 
-    def ready_once(&block)
+    def once(&block)
+      rmext_retained
       if ready?
-        block.call
+        block.call(self)
       else
-        rmext_on(:ready, &block)
+        rmext_once(:ready, &block)
       end
       self
     end
 
-    def cancel_ready(&block)
+    def cancel_block(&block)
       rmext_off(:ready, &block)
+      rmext_not_retained
     end
 
     def [](*keys)
-      if keys.first && long = (@shortcuts[keys.first.to_sym] || @shortcuts[keys.first.to_s])
-        keys = long
-      end
       @api[*keys]
     end
 
     def []=(*keys, val)
       # p "[]=", keys, val
-      if keys.first && long = (@shortcuts[keys.first.to_sym] || @shortcuts[keys.first.to_s])
-        keys = long
-      end
       @api[*keys] = val
+    end
+
+    def attr(keypath)
+      @api[className.downcase.to_sym].attr(keypath)
     end
 
     def self.create(&block)
@@ -532,9 +598,8 @@ module FirebaseExt
 
     def initialize(*models)
       @ready = false
-      @models = models.flatten
+      @models = models.flatten.compact
       @complete_blocks = {}
-      add_retain
       if @models.any?
         @models.each do |model|
           @complete_blocks[model] = proc do
@@ -546,31 +611,17 @@ module FirebaseExt
           end
         end
         @complete_blocks.each_pair do |model, block|
-          model.ready_once(&block)
+          model.once(&block)
         end
       else
         ready!
       end
     end
 
-    def add_retain
-      unless @retained
-        @retained = true
-        retain
-      end
-    end
-
-    def drop_retain
-      if @retained
-        @retained = false
-        release
-      end
-    end
-
     def ready!
       @ready = true
-      rmext_trigger(:ready)
-      drop_retain
+      rmext_trigger2(:ready, self)
+      rmext_not_retained
     end
 
     def cancel!
@@ -578,28 +629,66 @@ module FirebaseExt
       while model = models_outstanding.pop
         if blk = @complete_blocks[model]
           @complete_blocks.delete(model)
-          model.cancel_ready(&blk)
+          model.cancel_block(&blk)
         end
       end
-      drop_retain
+      rmext_not_retained
     end
 
     def ready?
       !!@ready
     end
 
-    def ready_once(&block)
+    def once(&block)
+      rmext_retained
       if ready?
-        block.call
+        block.call(self)
       else
         rmext_once(:ready, &block)
       end
       self
     end
 
-    def cancel_ready(&block)
+    def cancel_block(&block)
       rmext_off(:ready, &block)
-      drop_retain
+      rmext_not_retained
+    end
+
+  end
+
+  class OrderedSnaps
+
+    attr_accessor :transformations_table, :ref
+
+    def initialize
+      @snaps = []
+      @transformations_table = {}
+    end
+
+    def transform(&block)
+      @transform_block = block.weak!
+    end
+
+    def results
+      if @transform_block
+        @snaps.map do |snap|
+          @transformations_table[snap] ||= @transform_block.call(snap)
+        end
+      else
+        @snaps
+      end
+    end
+
+    def add(snap, prev)
+      p "added", snap.name, "after", prev
+      if current_index = @snaps.index { |existing| existing.name == snap.name }
+        @snaps.delete_at(current_index)
+      end
+      if prev && (index = @snaps.index { |existing| existing.name == prev })
+        @snaps.insert(index, snap)
+      else
+        @snaps.push(snap)
+      end
     end
 
   end
@@ -608,7 +697,7 @@ module FirebaseExt
 
     def prepareForReuse
       if @data
-        @data.unbind_ready(self)
+        @data.unbind_always(self)
       end
       @data = nil
       reset
@@ -617,14 +706,14 @@ module FirebaseExt
     def reset
     end
 
-    def ready(model)
+    def changed(model)
     end
 
     def data=(val)
       @data = val
       if @data
-        @data.ready do
-          ready(@data)
+        @data.always do
+          changed(@data)
         end
       end
       @data
@@ -639,18 +728,18 @@ module FirebaseExt
     def reset
     end
 
-    def ready(model)
+    def changed(model)
     end
 
     def model=(val)
       if @model
-        @model.unbind_ready(self)
+        @model.unbind_always(self)
       end
       @model = val
       reset
       if @model
-        @model.ready do
-          ready(@model)
+        @model.always do
+          changed(@model)
         end
       end
       @model
@@ -662,17 +751,17 @@ module FirebaseExt
 
     attr_reader :model
 
-    def ready(model)
+    def changed(model)
     end
 
     def model=(val)
       if @model
-        @model.unbind_ready(self)
+        @model.unbind_always(self)
       end
       @model = val
       if @model
-        @model.ready do
-          ready(@model)
+        @model.always do
+          changed(@model)
         end
       end
       @model
