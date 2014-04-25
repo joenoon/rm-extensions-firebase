@@ -156,9 +156,12 @@ class FQuery
 
     handler = if and_then.arity == 1
       wrapped_block = lambda do |snap|
-        $firebase_masters_by_fquery.setObject(snap, forKey:self)
-        own_snapshot(weak_owner, snap) if weak_owner.weakref_alive?
-        and_then.call(snap)
+        if weak_owner.weakref_alive?
+          datasnap = FirebaseExt::DataSnapshot.new(snap)
+          $firebase_masters_by_fquery.setObject(datasnap, forKey:self)
+          own_snapshot(weak_owner, datasnap)
+          and_then.call(datasnap)
+        end
       end.weak!
       if disconnect_block
         disconnect_block.weak!
@@ -176,8 +179,11 @@ class FQuery
       end
     else
       wrapped_block = lambda do |snap, prev|
-        $firebase_masters_by_fquery.setObject(snap, forKey:self)
-        and_then.call(snap, prev)
+        if weak_owner.weakref_alive?
+          datasnap = FirebaseExt::DataSnapshot.new(snap)
+          $firebase_masters_by_fquery.setObject(datasnap, forKey:self)
+          and_then.call(datasnap, prev)
+        end
       end.weak!
       if disconnect_block
         disconnect_block.weak!
@@ -234,10 +240,49 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :value, :ref, :callback, :handle
+    attr_accessor :value, :ref, :name
 
     def dealloc
       dealloc_inspect
+      super
+    end
+
+    def initialize(snap=nil)
+      if snap
+        @snap = snap
+        @ref = snap.ref
+        @name = snap.name
+        @value = snap.value
+      end
+    end
+
+    def hasValue?
+      !value.nil?
+    end
+
+    def attr(keypath)
+      valueForKeyPath(keypath)
+    end
+
+    def valueForKey(key)
+      value && value[key]
+    end
+
+    def valueForUndefinedKey(key)
+      nil
+    end
+
+  end
+
+  class Listener
+
+    include RMExtensions::CommonMethods
+
+    attr_accessor :snapshot, :ref, :callback, :handle
+
+    def dealloc
+      dealloc_inspect
+      stop!
       super
     end
 
@@ -246,10 +291,13 @@ module FirebaseExt
     end
 
     def start!
-      self.handle = ref.on(:value) do |snap|
-        self.value = snap.value
-        @callback.call(self) if @callback
-        @callback = nil
+      cancel_block = lambda do
+        p "cancel block"
+        raise "unhandled cancel"
+      end
+      @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
+        @snapshot = snap
+        @callback.call(snap) if @callback
         @ready = true
         rmext_trigger2(:ready, self)
         # p "ready__"
@@ -263,12 +311,12 @@ module FirebaseExt
       end
     end
 
-    def [](*keys)
-      current = value
-      keys.each do |key|
-        current = current && current[key]
-      end
-      current
+    def hasValue?
+      !!(snapshot && snapshot.hasValue?)
+    end
+
+    def toValue
+      snapshot && snapshot.value
     end
 
     def attr(keypath)
@@ -276,7 +324,7 @@ module FirebaseExt
     end
 
     def valueForKey(key)
-      value[key]
+      snapshot && snapshot.valueForKey(key)
     end
 
     def valueForUndefinedKey(key)
@@ -321,7 +369,7 @@ module FirebaseExt
     end
 
     def stub(name)
-      @watches[name] ||= DataSnapshot.new
+      @watches[name] ||= Listener.new
     end
 
     def watch_data(name, data)
@@ -339,7 +387,7 @@ module FirebaseExt
     end
 
     def watch(name, ref, &block)
-      data = DataSnapshot.new
+      data = Listener.new
       data.ref = ref
       data.callback = block && RMExtensions::WeakBlock.new(block)
       watch_data(name, data)
@@ -347,36 +395,16 @@ module FirebaseExt
       data
     end
 
-    def [](*keys)
-      name = keys.shift
-      res = @watches[name]
-      if res
-        if keys.size.zero?
-          res
-        else
-          res[*keys]
-        end
-      end
+    def attr(keypath)
+      valueForKeyPath(keypath)
     end
 
-    def []=(*keys, val)
-      p "[]=", keys, val
-      name = keys.shift
-      res = @watches[name]
-      ref = if res
-        if keys.size.zero?
-          res.ref
-        else
-          res.ref[*keys]
-        end
-      end
-      if ref
-        if val.is_a?(Hash)
-          ref.updateChildValues(val)
-        else
-          ref.setValue(val)
-        end
-      end
+    def valueForKey(key)
+      @watches[key]
+    end
+
+    def valueForUndefinedKey(key)
+      nil
     end
 
   end
@@ -392,11 +420,11 @@ module FirebaseExt
 
     attr_accessor :opts
 
-    attr_reader :api
+    attr_reader :api, :root
 
     def initialize(opts=nil)
       @opts = opts
-      setup
+      internal_setup
     end
 
     def ready?
@@ -406,30 +434,32 @@ module FirebaseExt
     def ready!
       @ready = true
       rmext_trigger2(:ready, self)
-      rmext_not_retained
+      @waiting_once = nil
     end
 
-    def setup
+    # override
+    def setup(opts=nil)
+    end
+
+    def internal_setup
       rmext_cleanup
       @api = Coordinator.new
       @api.rmext_on(:ready) do
         self.ready!
       end
-      if block = self.class.describe_block
-        block.call(self, @opts)
-      end
+      setup(@opts)
     end
 
     def reload
       @ready = false
       old_watches = @api.watches # keep them in memory momentarily
-      setup
+      internal_setup
       old_watches = nil # let them go
       self
     end
 
     def watch(name, ref, &block)
-      @api.watch(name, ref, &block)
+      rmext_ivar(name, @api.watch(name, ref, &block))
     end
 
     # combine the watches of another model into this model,
@@ -442,13 +472,13 @@ module FirebaseExt
     #
     # Book
     #   attr_reader :author
-    #   model.watch(:book, ref) do |data|
+    #   model.watch(:root, ref) do |data|
     #     model.combine(:author, Author.get(data[:author_id]))
     #   end
     # ...
     # book = Book.get(1)
-    # book[:book, :name] #=> "My Book"
-    # book.author[:author, :name] #=> "Joe Noon"
+    # book.attr("name") #=> "My Book"
+    # book.author.attr("name") #=> "Joe Noon"
     def combine(name, model)
       model.api.watches.each_pair do |k, data|
         @api.watch_data([name, k], data)
@@ -472,15 +502,15 @@ module FirebaseExt
       block.owner.rmext_ivar(ivar_key, block)
       rmext_on(:ready, &block)
       if ready?
-        block.call(self)
+        rmext_block_on_main_q(block, self)
       end
       self
     end
 
     def once(&block)
-      rmext_retained
+      @waiting_once = self
       if ready?
-        block.call(self)
+        rmext_block_on_main_q(block, self)
       else
         rmext_once(:ready, &block)
       end
@@ -489,34 +519,20 @@ module FirebaseExt
 
     def cancel_block(&block)
       rmext_off(:ready, &block)
-      rmext_not_retained
-    end
-
-    def [](*keys)
-      @api[*keys]
-    end
-
-    def []=(*keys, val)
-      # p "[]=", keys, val
-      @api[*keys] = val
     end
 
     def attr(keypath)
-      @api[className.downcase.to_sym].attr(keypath)
+      root.attr(keypath)
+    end
+
+    def hasValue?
+      root.hasValue?
     end
 
     def self.create(&block)
       x = new
       block.call(x)
       x
-    end
-
-    def self.describe(&block)
-      @describe_block = block
-    end
-
-    def self.describe_block
-      @describe_block
     end
 
     # this is the method you should call
@@ -620,8 +636,8 @@ module FirebaseExt
 
     def ready!
       @ready = true
-      rmext_trigger2(:ready, self)
-      rmext_not_retained
+      rmext_trigger2(:ready, models)
+      @waiting_once = nil
     end
 
     def cancel!
@@ -632,7 +648,7 @@ module FirebaseExt
           model.cancel_block(&blk)
         end
       end
-      rmext_not_retained
+      @waiting_once = nil
     end
 
     def ready?
@@ -640,9 +656,9 @@ module FirebaseExt
     end
 
     def once(&block)
-      rmext_retained
+      @waiting_once = self
       if ready?
-        block.call(self)
+        rmext_block_on_main_q(block, models)
       else
         rmext_once(:ready, &block)
       end
@@ -651,7 +667,6 @@ module FirebaseExt
 
     def cancel_block(&block)
       rmext_off(:ready, &block)
-      rmext_not_retained
     end
 
   end
@@ -695,6 +710,11 @@ module FirebaseExt
 
   class TableViewCell < ::RMExtensions::TableViewCell
 
+    def self.handle(key)
+      alias_method key, :data
+      alias_method "#{key}=", :data=
+    end
+
     def prepareForReuse
       if @data
         @data.unbind_always(self)
@@ -706,14 +726,14 @@ module FirebaseExt
     def reset
     end
 
-    def changed(model)
+    def changed
     end
 
     def data=(val)
       @data = val
       if @data
         @data.always do
-          changed(@data)
+          changed
         end
       end
       @data
@@ -725,10 +745,15 @@ module FirebaseExt
 
     attr_reader :model
 
+    def self.handle(key)
+      alias_method key, :model
+      alias_method "#{key}=", :model=
+    end
+
     def reset
     end
 
-    def changed(model)
+    def changed
     end
 
     def model=(val)
@@ -739,7 +764,7 @@ module FirebaseExt
       reset
       if @model
         @model.always do
-          changed(@model)
+          changed
         end
       end
       @model
@@ -751,7 +776,12 @@ module FirebaseExt
 
     attr_reader :model
 
-    def changed(model)
+    def self.handle(key)
+      alias_method key, :model
+      alias_method "#{key}=", :model=
+    end
+
+    def changed
     end
 
     def model=(val)
@@ -761,7 +791,7 @@ module FirebaseExt
       @model = val
       if @model
         @model.always do
-          changed(@model)
+          changed
         end
       end
       @model
