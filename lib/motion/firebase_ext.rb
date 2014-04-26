@@ -66,7 +66,7 @@ class FQuery
               @own.removeObjectForKey(fquery)
               hash.delete(handler)
               unless cleanup_only
-                # p fquery, "removeObserverWithHandle", handler
+                # p fquery, "removeObserverWithHandle", handler, caller
                 fquery.removeObserverWithHandle(handler)
               end
               other_handlers = other.instance_variable_get("@_firebase_handlers")
@@ -377,6 +377,9 @@ module FirebaseExt
 
     def watch_data(name, data)
       if current = @watches[name]
+        if current == data || current.description == data.description
+          return
+        end
         current.stop!
         current.rmext_off(:ready, self)
       end
@@ -489,25 +492,19 @@ module FirebaseExt
       rmext_ivar(name, model)
     end
 
-    def ivar_key
-      "firebasemodel_#{object_id}_readyblk"
-    end
-
-    def unbind_always(context)
-      if existing = context.rmext_ivar(ivar_key)
-        rmext_off(:ready, self, &existing)
-      end
-    end
-
     def always(&block)
-      unbind_always(block.owner)
       block.weak!
-      block.owner.rmext_ivar(ivar_key, block)
       rmext_on(:ready, &block)
       if ready?
         rmext_block_on_main_q(block, self)
       end
-      self
+      # return an unbinder
+      weak_self = WeakRef.new(self)
+      lambda do
+        if weak_self.weakref_alive?
+          rmext_off(:ready, &block)
+        end
+      end
     end
 
     def once(&block)
@@ -728,7 +725,8 @@ module FirebaseExt
 
     def prepareForReuse
       if @data
-        @data.unbind_always(self)
+        @data_unbinder.call if @data_unbinder
+        @data_unbinder = nil
       end
       @data = nil
       reset
@@ -747,7 +745,7 @@ module FirebaseExt
         unless @data.ready?
           raise "#{className} introduced a model that is not ready: #{@data.inspect}"
         end
-        @data.always do
+        @data_unbinder = @data.always do
           changed
         end
       end
@@ -781,7 +779,8 @@ module FirebaseExt
     def model=(val)
       return @model if @model == val
       if @model
-        @model.unbind_always(self)
+        @model_unbinder.call if @model_unbinder
+        @model_unbinder = nil
       end
       @model = val
       reset
@@ -789,7 +788,7 @@ module FirebaseExt
         unless @model.ready?
           raise "#{className} introduced a model that is not ready: #{@model.inspect}"
         end
-        @model.always do
+        @model_unbinder = @model.always do
           changed
         end
       end
@@ -823,14 +822,15 @@ module FirebaseExt
     def model=(val)
       return @model if @model == val
       if @model
-        @model.unbind_always(self)
+        @model_unbinder.call if @model_unbinder
+        @model_unbinder = nil
       end
       @model = val
       if @model
         unless @model.ready?
           raise "#{className} introduced a model that is not ready: #{@model.inspect}"
         end
-        @model.always do
+        @model_unbinder = @model.always do
           if isViewLoaded
             changed
           else
