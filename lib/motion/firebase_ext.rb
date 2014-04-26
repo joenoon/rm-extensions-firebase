@@ -741,11 +741,12 @@ module FirebaseExt
     end
 
     def data=(val)
+      return @data if val == @data
       @data = val
-      unless @data.ready?
-        raise "#{className} introduced a model that is not ready: #{@data.inspect}"
-      end
       if @data
+        unless @data.ready?
+          raise "#{className} introduced a model that is not ready: #{@data.inspect}"
+        end
         @data.always do
           changed
         end
@@ -778,15 +779,16 @@ module FirebaseExt
     end
 
     def model=(val)
+      return @model if @model == val
       if @model
         @model.unbind_always(self)
       end
       @model = val
-      unless @model.ready?
-        raise "#{className} introduced a model that is not ready: #{@model.inspect}"
-      end
       reset
       if @model
+        unless @model.ready?
+          raise "#{className} introduced a model that is not ready: #{@model.inspect}"
+        end
         @model.always do
           changed
         end
@@ -800,6 +802,17 @@ module FirebaseExt
 
     extend HandleModel
 
+    def viewDidLoad
+      s = super
+      if @pending_changed
+        @pending_changed = nil
+        if @model
+          changed
+        end
+      end
+      s
+    end
+
     def changed
     end
 
@@ -808,16 +821,21 @@ module FirebaseExt
     end
 
     def model=(val)
+      return @model if @model == val
       if @model
         @model.unbind_always(self)
       end
       @model = val
-      unless @model.ready?
-        raise "#{className} introduced a model that is not ready: #{@model.inspect}"
-      end
       if @model
+        unless @model.ready?
+          raise "#{className} introduced a model that is not ready: #{@model.inspect}"
+        end
         @model.always do
-          changed
+          if isViewLoaded
+            changed
+          else
+            @pending_changed = true
+          end
         end
       end
       @model
