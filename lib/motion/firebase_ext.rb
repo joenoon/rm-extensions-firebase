@@ -75,6 +75,7 @@ class FQuery
           end
         end
       end
+      nil
     end
     def dealloc
       off
@@ -200,9 +201,11 @@ class FQuery
         end
       end
     end
-    track_handler(owner, handler, self)
-    track_handler(self, handler, owner)
-    handler
+    unless options[:once]
+      track_handler(owner, handler, self)
+      track_handler(self, handler, owner)
+      handler
+    end
   end
 
   def once(event_type, options={}, &and_then)
@@ -708,12 +711,20 @@ module FirebaseExt
 
   end
 
+  module HandleModel
+    def handle(key)
+      define_method(key) do
+        model
+      end
+      define_method("#{key}=") do |val|
+        self.model = val
+      end
+    end
+  end
+
   class TableViewCell < ::RMExtensions::TableViewCell
 
-    def self.handle(key)
-      alias_method key, :data
-      alias_method "#{key}=", :data=
-    end
+    extend HandleModel
 
     def prepareForReuse
       if @data
@@ -731,6 +742,9 @@ module FirebaseExt
 
     def data=(val)
       @data = val
+      unless @data.ready?
+        raise "#{className} introduced a model that is not ready: #{@data.inspect}"
+      end
       if @data
         @data.always do
           changed
@@ -739,14 +753,19 @@ module FirebaseExt
       @data
     end
 
+    def model
+      @data
+    end
+
+    def model=(val)
+      self.data = val
+    end
+
   end
 
   class View < ::RMExtensions::View
 
-    def self.handle(key)
-      alias_method key, :model
-      alias_method "#{key}=", :model=
-    end
+    extend HandleModel
 
     def reset
     end
@@ -763,6 +782,9 @@ module FirebaseExt
         @model.unbind_always(self)
       end
       @model = val
+      unless @model.ready?
+        raise "#{className} introduced a model that is not ready: #{@model.inspect}"
+      end
       reset
       if @model
         @model.always do
@@ -776,10 +798,7 @@ module FirebaseExt
 
   class ViewController < ::RMExtensions::ViewController
 
-    def self.handle(key)
-      alias_method key, :model
-      alias_method "#{key}=", :model=
-    end
+    extend HandleModel
 
     def changed
     end
@@ -793,6 +812,9 @@ module FirebaseExt
         @model.unbind_always(self)
       end
       @model = val
+      unless @model.ready?
+        raise "#{className} introduced a model that is not ready: #{@model.inspect}"
+      end
       if @model
         @model.always do
           changed
