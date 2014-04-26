@@ -743,8 +743,6 @@ module FirebaseExt
 
   class View < ::RMExtensions::View
 
-    attr_reader :model
-
     def self.handle(key)
       alias_method key, :model
       alias_method "#{key}=", :model=
@@ -754,6 +752,10 @@ module FirebaseExt
     end
 
     def changed
+    end
+
+    def model
+      @model
     end
 
     def model=(val)
@@ -774,14 +776,16 @@ module FirebaseExt
 
   class ViewController < ::RMExtensions::ViewController
 
-    attr_reader :model
-
     def self.handle(key)
       alias_method key, :model
       alias_method "#{key}=", :model=
     end
 
     def changed
+    end
+
+    def model
+      @model
     end
 
     def model=(val)
