@@ -430,6 +430,7 @@ module FirebaseExt
 
     def initialize(opts=nil)
       @opts = opts
+      @dependencies = {}
       internal_setup
     end
 
@@ -451,9 +452,15 @@ module FirebaseExt
       rmext_cleanup
       @api = Coordinator.new
       @api.rmext_on(:ready) do
-        self.ready!
+        check_ready
       end
       setup(@opts)
+    end
+
+    def check_ready
+      if @api.ready? && @dependencies.values.all?(&:ready?)
+        ready!
+      end
     end
 
     def reload
@@ -468,28 +475,26 @@ module FirebaseExt
       rmext_ivar(name, @api.watch(name, ref, &block))
     end
 
-    # combine the watches of another model into this model,
+    # add another model as a dependency and ivar,
     # which will affect ready.  should be done before ready has
-    # has a chance to be triggered.  inserts new watches
-    # with arrays using the arbitary name given and the existing key
-    # on the other model's watch.  they are not meant to be accessed
-    # by [] syntax.  the model is assigned to an ivar of the name 
-    # given, which an accessor can be created by the user to access.
+    # has a chance to be triggered.  the user can add an
+    # attr_reader for easy access if desired.
     #
     # Book
     #   attr_reader :author
     #   model.watch(:root, ref) do |data|
-    #     model.combine(:author, Author.get(data[:author_id]))
+    #     model.depend(:author, Author.get(data[:author_id]))
     #   end
     # ...
     # book = Book.get(1)
     # book.attr("name") #=> "My Book"
     # book.author.attr("name") #=> "Joe Noon"
-    def combine(name, model)
-      model.api.watches.each_pair do |k, data|
-        @api.watch_data([name, k], data)
-      end
+    def depend(name, model)
+      @dependencies[name] = model
       rmext_ivar(name, model)
+      model.rmext_on(:ready) do
+        check_ready
+      end
     end
 
     def always(&block)
@@ -743,7 +748,7 @@ module FirebaseExt
       @data = val
       if @data
         unless @data.ready?
-          raise "#{className} introduced a model that is not ready: #{@data.inspect}"
+          raise "#{className} tried to use a model that is not ready: #{@data.inspect}"
         end
         @data_unbinder = @data.always do
           changed
@@ -786,7 +791,7 @@ module FirebaseExt
       reset
       if @model
         unless @model.ready?
-          raise "#{className} introduced a model that is not ready: #{@model.inspect}"
+          raise "#{className} tried to use a model that is not ready: #{@model.rmext_object_desc}"
         end
         @model_unbinder = @model.always do
           changed
@@ -828,7 +833,7 @@ module FirebaseExt
       @model = val
       if @model
         unless @model.ready?
-          raise "#{className} introduced a model that is not ready: #{@model.inspect}"
+          raise "#{className} tried to use a model that is not ready: #{@model.inspect}"
         end
         @model_unbinder = @model.always do
           if isViewLoaded
