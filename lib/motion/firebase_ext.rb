@@ -534,6 +534,10 @@ module FirebaseExt
       root.hasValue?
     end
 
+    def toValue
+      root.toValue
+    end
+
     def self.create(&block)
       x = new
       block.call(x)
