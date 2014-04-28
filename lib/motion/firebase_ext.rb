@@ -429,7 +429,7 @@ module FirebaseExt
     attr_reader :api, :root
 
     def initialize(opts=nil)
-      @opts = opts
+      @opts = opts || {}
       @dependencies = {}
       internal_setup
     end
@@ -445,7 +445,7 @@ module FirebaseExt
     end
 
     # override
-    def setup(opts=nil)
+    def setup
     end
 
     def internal_setup
@@ -454,7 +454,7 @@ module FirebaseExt
       @api.rmext_on(:ready) do
         check_ready
       end
-      setup(@opts)
+      setup
     end
 
     def check_ready
