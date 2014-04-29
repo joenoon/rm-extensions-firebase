@@ -263,6 +263,12 @@ module FirebaseExt
       !value.nil?
     end
 
+    def requireValue!
+      unless hasValue?
+        raise "Required value is missing: #{ref.description}"
+      end
+    end
+
     def attr(keypath)
       valueForKeyPath(keypath)
     end
@@ -281,7 +287,7 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :snapshot, :ref, :callback, :handle
+    attr_accessor :snapshot, :ref, :callback, :handle, :value_required
 
     def dealloc
       dealloc_inspect
@@ -300,6 +306,7 @@ module FirebaseExt
       end
       @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
         @snapshot = snap
+        snap.requireValue! if value_required
         @callback.call(snap) if @callback
         @ready = true
         rmext_trigger2(:ready, self)
@@ -392,9 +399,12 @@ module FirebaseExt
       @watches[name] = data
     end
 
-    def watch(name, ref, &block)
+    def watch(name, ref, opts={}, &block)
       data = Listener.new
       data.ref = ref
+      if opts[:required]
+        data.value_required = true
+      end
       data.callback = block && RMExtensions::WeakBlock.new(block)
       watch_data(name, data)
       data.start!
@@ -429,7 +439,7 @@ module FirebaseExt
     attr_reader :api, :root
 
     def initialize(opts=nil)
-      @opts = opts || {}
+      @opts = opts
       @dependencies = {}
       internal_setup
     end
@@ -471,8 +481,8 @@ module FirebaseExt
       self
     end
 
-    def watch(name, ref, &block)
-      rmext_ivar(name, @api.watch(name, ref, &block))
+    def watch(name, ref, opts={}, &block)
+      rmext_ivar(name, @api.watch(name, ref, opts, &block))
     end
 
     # add another model as a dependency and ivar,
@@ -513,10 +523,10 @@ module FirebaseExt
     end
 
     def once(&block)
-      @waiting_once = self
       if ready?
         rmext_block_on_main_q(block, self)
       else
+        @waiting_once = self
         rmext_once(:ready, &block)
       end
       self
@@ -665,10 +675,10 @@ module FirebaseExt
     end
 
     def once(&block)
-      @waiting_once = self
       if ready?
         rmext_block_on_main_q(block, models)
       else
+        @waiting_once = self
         rmext_once(:ready, &block)
       end
       self
@@ -680,38 +690,99 @@ module FirebaseExt
 
   end
 
-  class OrderedSnaps
+  class Collection
 
-    attr_accessor :transformations_table, :ref
+    attr_accessor :transformations_table, :ref, :snaps
 
-    def initialize
+    def initialize(ref)
       @snaps = []
       @transformations_table = {}
+      ref.on(:added) do |snap, prev|
+        add(snap, prev)
+      end
+      ref.on(:removed) do |snap|
+        remove(snap)
+      end
+      ref.on(:moved) do |snap, prev|
+        add(snap, prev)
+      end
     end
 
-    def transform(&block)
-      @transform_block = block.weak!
+    def transform=(block)
+      if block
+        @transform_block_weak_owner = WeakRef.new(block.owner)
+        @transform_block = block.weak!
+      else
+        @transform_block_weak_owner = nil
+        @transform_block = nil
+      end
+    end
+
+    def transform(snap)
+      if block = @transform_block
+        if @transform_block_weak_owner.weakref_alive?
+          block.call(snap)
+        end
+      else
+        snap
+      end
+    end
+
+    def store_transform(snap)
+      @transformations_table[snap] ||= transform(snap)
     end
 
     def results
-      if @transform_block
-        @snaps.map do |snap|
-          @transformations_table[snap] ||= @transform_block.call(snap)
-        end
-      else
-        @snaps
-      end
+      @snaps.map do |snap|
+        store_transform(snap)
+      end.compact
     end
 
     def add(snap, prev)
-      p "added", snap.name, "after", prev
+      moved = false
       if current_index = @snaps.index { |existing| existing.name == snap.name }
+        moved = true
         @snaps.delete_at(current_index)
       end
       if prev && (index = @snaps.index { |existing| existing.name == prev })
-        @snaps.insert(index, snap)
+        @snaps.insert(index + 1, snap)
       else
-        @snaps.push(snap)
+        @snaps.unshift(snap)
+      end
+      if moved
+        rmext_trigger2(:moved, snap, prev)
+      else
+        rmext_trigger2(:added, snap, prev)
+      end
+      rmext_debounce(:changed) do
+        rmext_trigger2(:changed)
+      end
+    end
+
+    def remove(snap)
+      if current_index = @snaps.index { |existing| existing.name == snap.name }
+        @snaps.delete_at(current_index)
+      end
+      rmext_trigger2(:removed, snap)
+      rmext_debounce(:changed) do
+        rmext_trigger2(:changed)
+      end
+    end
+
+    def once(&block)
+      results = self.results
+      if (snap = results.first) && snap.is_a?(Model)
+        FirebaseExt::Batch.new(results).once(&block)
+      else
+        rmext_block_on_main_q(block, results)
+      end
+      self
+    end
+
+    def changed(&block)
+      once(&block)
+      rmext_on(:changed) do
+        once(&block)
       end
     end
 
