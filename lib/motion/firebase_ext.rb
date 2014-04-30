@@ -309,7 +309,7 @@ module FirebaseExt
         snap.requireValue! if value_required
         @callback.call(snap) if @callback
         @ready = true
-        rmext_trigger2(:ready, self)
+        rmext_trigger(:ready, self)
         # p "ready__"
       end
     end
@@ -375,7 +375,7 @@ module FirebaseExt
 
     def ready!
       @ready = true
-      rmext_trigger2(:ready, self)
+      rmext_trigger(:ready, self)
     end
 
     def stub(name)
@@ -450,7 +450,7 @@ module FirebaseExt
 
     def ready!
       @ready = true
-      rmext_trigger2(:ready, self)
+      rmext_trigger(:ready, self)
       @waiting_once = nil
     end
 
@@ -655,7 +655,7 @@ module FirebaseExt
 
     def ready!
       @ready = true
-      rmext_trigger2(:ready, models)
+      rmext_trigger(:ready, models)
       @waiting_once = nil
     end
 
@@ -750,12 +750,12 @@ module FirebaseExt
         @snaps.unshift(snap)
       end
       if moved
-        rmext_trigger2(:moved, snap, prev)
+        rmext_trigger(:moved, snap, prev)
       else
-        rmext_trigger2(:added, snap, prev)
+        rmext_trigger(:added, snap, prev)
       end
       rmext_debounce(:changed) do
-        rmext_trigger2(:changed)
+        rmext_trigger(:changed)
       end
     end
 
@@ -763,9 +763,9 @@ module FirebaseExt
       if current_index = @snaps.index { |existing| existing.name == snap.name }
         @snaps.delete_at(current_index)
       end
-      rmext_trigger2(:removed, snap)
+      rmext_trigger(:removed, snap)
       rmext_debounce(:changed) do
-        rmext_trigger2(:changed)
+        rmext_trigger(:changed)
       end
     end
 
