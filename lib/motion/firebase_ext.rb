@@ -692,6 +692,13 @@ module FirebaseExt
 
   class Collection
 
+    include RMExtensions::CommonMethods
+
+    def dealloc
+      dealloc_inspect
+      super
+    end
+
     attr_accessor :transformations_table, :ref, :snaps
 
     def initialize(ref)
@@ -780,9 +787,12 @@ module FirebaseExt
     end
 
     def changed(&block)
+      weak_owner = WeakRef.new(block.owner)
       once(&block)
       rmext_on(:changed) do
-        once(&block)
+        if weak_owner.weakref_alive?
+          once(&block)
+        end
       end
     end
 
