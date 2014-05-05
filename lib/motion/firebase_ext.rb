@@ -526,7 +526,7 @@ module FirebaseExt
       if ready?
         rmext_block_on_main_q(block, self)
       else
-        @waiting_once = self
+        @waiting_once = [ self, block.owner ]
         rmext_once(:ready, &block)
       end
       self
@@ -678,7 +678,7 @@ module FirebaseExt
       if ready?
         rmext_block_on_main_q(block, models)
       else
-        @waiting_once = self
+        @waiting_once = [ self, block.owner ]
         rmext_once(:ready, &block)
       end
       self
@@ -792,6 +792,17 @@ module FirebaseExt
       rmext_on(:changed) do
         if weak_owner.weakref_alive?
           once(&block)
+        end
+      end
+    end
+
+    def added(&block)
+      weak_owner = WeakRef.new(block.owner)
+      rmext_on(:added) do |snap, prev|
+        if weak_owner.weakref_alive?
+          transform(snap).once do |model|
+            rmext_block_on_main_q(block, model, prev)
+          end
         end
       end
     end
