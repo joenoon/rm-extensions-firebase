@@ -153,7 +153,7 @@ class FQuery
     # end
 
     disconnect_block = options[:disconnect]
-    raise ":disconnect handler must not accept any arguments" if disconnect_block && disconnect_block.arity > 0
+    # raise ":disconnect handler must not accept any arguments" if disconnect_block && disconnect_block.arity > 0
 
     handler = if and_then.arity == 1
       wrapped_block = lambda do |snap|
