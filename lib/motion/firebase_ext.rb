@@ -299,10 +299,15 @@ module FirebaseExt
       !!@ready
     end
 
+    def cancelled?
+      !!@cancelled
+    end
+
     def start!
-      cancel_block = lambda do |x|
-        p "unhandled cancel block", x
-        # raise "unhandled cancel"
+      cancel_block = lambda do |err|
+        @cancelled = err
+        rmext_trigger(:cancelled, self)
+        rmext_trigger(:finished, self)
       end
       @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
         @snapshot = snap
@@ -310,11 +315,13 @@ module FirebaseExt
         @callback.call(snap) if @callback
         @ready = true
         rmext_trigger(:ready, self)
+        rmext_trigger(:finished, self)
         # p "ready__"
       end
     end
 
     def stop!
+      @cancelled = false
       @ready = false
       if ref && handle
         ref.off(handle)
@@ -355,6 +362,7 @@ module FirebaseExt
     end
 
     def clear!
+      @cancelled = false
       @ready = false
       keys = @watches.keys.dup
       while name = keys.pop
@@ -373,9 +381,20 @@ module FirebaseExt
       !!@ready
     end
 
+    def cancelled?
+      !!@cancelled
+    end
+
     def ready!
       @ready = true
       rmext_trigger(:ready, self)
+      rmext_trigger(:finished, self)
+    end
+
+    def cancelled!
+      @cancelled = true
+      rmext_trigger(:cancelled, self)
+      rmext_trigger(:finished, self)
     end
 
     def stub(name)
@@ -388,12 +407,13 @@ module FirebaseExt
           return
         end
         current.stop!
-        current.rmext_off(:ready, self)
+        current.rmext_off(:finished, self)
       end
-      data.rmext_on(:ready) do
+      data.rmext_on(:finished) do
         if @watches.values.all?(&:ready?)
           ready!
-          # p "ready__"
+        elsif @watches.values.any?(&:cancelled?)
+          cancelled!
         end
       end
       @watches[name] = data
@@ -448,9 +468,25 @@ module FirebaseExt
       !!@ready
     end
 
+    def cancelled?
+      !!@cancelled
+    end
+
+    def finished?
+      ready? || cancelled?
+    end
+
     def ready!
       @ready = true
       rmext_trigger(:ready, self)
+      rmext_trigger(:finished, self)
+      @waiting_once = nil
+    end
+
+    def cancelled!
+      @cancelled = true
+      rmext_trigger(:cancelled, self)
+      rmext_trigger(:finished, self)
       @waiting_once = nil
     end
 
@@ -461,14 +497,16 @@ module FirebaseExt
     def internal_setup
       rmext_cleanup
       @api = Coordinator.new
-      @api.rmext_on(:ready) do
+      @api.rmext_on(:finished) do
         check_ready
       end
       setup
     end
 
     def check_ready
-      if @api.ready? && @dependencies.values.all?(&:ready?)
+      if @api.cancelled? || @dependencies.values.any?(&:cancelled?)
+        cancelled!
+      elsif @api.ready? && @dependencies.values.all?(&:ready?)
         ready!
       end
     end
@@ -502,38 +540,43 @@ module FirebaseExt
     def depend(name, model)
       @dependencies[name] = model
       rmext_ivar(name, model)
-      model.rmext_on(:ready) do
+      model.rmext_on(:finished) do
         check_ready
       end
     end
 
     def always(&block)
-      block.weak!
-      rmext_on(:ready, &block)
+      return false if cancelled?
       if ready?
         rmext_block_on_main_q(block, self)
       end
       # return an unbinder
+      block.weak!
+      rmext_on(:ready, &block)
       weak_self = WeakRef.new(self)
-      lambda do
+      unbinder = lambda do
         if weak_self.weakref_alive?
           rmext_off(:ready, &block)
         end
       end
+      rmext_once(:cancelled, &unbinder)
+      unbinder
     end
 
     def once(&block)
-      if ready?
+      if ready? || cancelled?
         rmext_block_on_main_q(block, self)
       else
         @waiting_once = [ self, block.owner ]
-        rmext_once(:ready, &block)
+        rmext_once(:finished, &block)
       end
       self
     end
 
     def cancel_block(&block)
       rmext_off(:ready, &block)
+      rmext_off(:cancelled, &block)
+      rmext_off(:finished, &block)
     end
 
     def attr(keypath)
@@ -616,6 +659,15 @@ module FirebaseExt
         @memory_queue
       end
 
+      def memory_keys
+        keys = []
+        keyEnumerator = memory.keyEnumerator
+        while key = keyEnumerator.nextObject
+          keys.push key
+        end
+        keys
+      end
+
     end
 
   end
@@ -653,9 +705,17 @@ module FirebaseExt
       end
     end
 
+    def ready_models
+      models.select { |x| x.ready? }
+    end
+
+    def cancelled_models
+      models.select { |x| x.cancelled? }
+    end
+
     def ready!
       @ready = true
-      rmext_trigger(:ready, models)
+      rmext_trigger(:ready, ready_models)
       @waiting_once = nil
     end
 
@@ -676,7 +736,7 @@ module FirebaseExt
 
     def once(&block)
       if ready?
-        rmext_block_on_main_q(block, models)
+        rmext_block_on_main_q(block, ready_models)
       else
         @waiting_once = [ self, block.owner ]
         rmext_once(:ready, &block)
