@@ -300,9 +300,9 @@ module FirebaseExt
     end
 
     def start!
-      cancel_block = lambda do
-        p "cancel block"
-        raise "unhandled cancel"
+      cancel_block = lambda do |x|
+        p "unhandled cancel block", x
+        # raise "unhandled cancel"
       end
       @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
         @snapshot = snap
