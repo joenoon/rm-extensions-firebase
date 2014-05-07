@@ -153,7 +153,7 @@ class FQuery
     # end
 
     disconnect_block = options[:disconnect]
-    # raise ":disconnect handler must not accept any arguments" if disconnect_block && disconnect_block.arity > 0
+    raise ":disconnect handler must not accept any arguments" if disconnect_block && disconnect_block.arity != 1
 
     handler = if and_then.arity == 1
       wrapped_block = lambda do |snap|
@@ -554,7 +554,7 @@ module FirebaseExt
       block.weak!
       rmext_on(:ready, &block)
       weak_self = WeakRef.new(self)
-      unbinder = lambda do
+      unbinder = proc do
         if weak_self.weakref_alive?
           rmext_off(:ready, &block)
         end
@@ -759,12 +759,16 @@ module FirebaseExt
       super
     end
 
-    attr_accessor :transformations_table, :ref, :snaps
+    attr_accessor :transformations_table, :ref, :snaps, :cancelled
 
     def initialize(ref)
       @snaps = []
       @transformations_table = {}
-      ref.on(:added) do |snap, prev|
+      cancel_block = lambda do |err|
+        @cancelled = err
+        cancelled!
+      end
+      ref.on(:added, { :disconnect => cancel_block }) do |snap, prev|
         add(snap, prev)
       end
       ref.on(:removed) do |snap|
@@ -773,6 +777,11 @@ module FirebaseExt
       ref.on(:moved) do |snap, prev|
         add(snap, prev)
       end
+    end
+
+    def cancelled!
+      p "CANCELLED! #{ref.description} #{@cancelled.localizedDescription}"
+      rmext_trigger(:cancelled, self)
     end
 
     def transform=(block)
