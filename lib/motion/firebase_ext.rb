@@ -762,6 +762,7 @@ module FirebaseExt
     attr_accessor :transformations_table, :ref, :snaps, :cancelled
 
     def initialize(ref)
+      @ref = ref
       @snaps = []
       @transformations_table = {}
       cancel_block = lambda do |err|
@@ -780,7 +781,6 @@ module FirebaseExt
     end
 
     def cancelled!
-      p "CANCELLED! #{ref.description} #{@cancelled.localizedDescription}"
       rmext_trigger(:cancelled, self)
     end
 
