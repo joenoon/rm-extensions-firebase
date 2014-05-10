@@ -24,49 +24,41 @@ class FQuery
 
   class Holder
     
+    include ::RMExtensions::CommonMethods
+
     attr_accessor :map
     
     def initialize
-      @map = NSMapTable.weakToStrongObjectsMapTable
-      @own = NSMapTable.weakToStrongObjectsMapTable
+      @map = ::RMExtensions::WeakToStrongHash.new
+      @own = ::RMExtensions::WeakToStrongHash.new
     end
 
     def own_snapshot(snap)
-      ref = snap.ref
-      unless owned = @own.objectForKey(ref)
-        owned = []
-        @own.setObject(owned, forKey:ref)
-      end
-      owned.push snap
+      @own[snap.ref] = snap
+      return
     end
 
     def track(fquery, handler, leaf)
-      unless query_handles = @map.objectForKey(leaf)
-        query_handles = {}
-        @map.setObject(query_handles, forKey:leaf)
-      end
-      query_handles[handler] = fquery
+      @map[leaf] ||= {}
+      @map[leaf][handler] = fquery
+      return
     end
 
     def off(handle=nil, cleanup_only=false)
       object_context = !handle.is_a?(Integer) && handle
       handle = nil if object_context
-      keyEnum = @map.keyEnumerator
-      keys = []
-      while key = keyEnum.nextObject
-        keys.push key
-      end
+      keys = [] + @map.keys
       while other = keys.pop
         next if object_context && other != object_context
-        if hash = @map.objectForKey(other)
+        if hash = @map[other]
           hash_keys = [] + hash.keys
           while handler = hash_keys.pop
             if !handle || handler == handle
               fquery = hash[handler]
-              @own.removeObjectForKey(fquery)
+              @own.delete(fquery)
               hash.delete(handler)
               unless cleanup_only
-                # p fquery, "removeObserverWithHandle", handler, caller
+                # p fquery.description, "removeObserverWithHandle", handler #, caller
                 fquery.removeObserverWithHandle(handler)
               end
               other_handlers = other.instance_variable_get("@_firebase_handlers")
@@ -77,7 +69,7 @@ class FQuery
       end
       nil
     end
-    def dealloc
+    def rmext_dealloc
       off
       super
     end
@@ -102,37 +94,7 @@ class FQuery
     nil
   end
 
-  Dispatch.once do
-    $firebase_masters_by_url = NSMapTable.strongToWeakObjectsMapTable
-    $firebase_masters_by_fquery = NSMapTable.weakToWeakObjectsMapTable
-  end
-
-  def print_masters
-    puts "$firebase_masters_by_url:"
-    for k in $firebase_masters_by_url.keyEnumerator
-      puts "  - #{k}: #{$firebase_masters_by_url.objectForKey(k).rmext_object_desc}"
-    end
-    puts "$firebase_masters_by_fquery:"
-    for k in $firebase_masters_by_fquery.keyEnumerator
-      puts "  - #{k.rmext_object_desc}: #{$firebase_masters_by_fquery.objectForKey(k).rmext_object_desc}"
-    end
-    nil
-  end
-
-  def master
-    if m = $firebase_masters_by_url.objectForKey(description)
-      m
-    else
-      $firebase_masters_by_url.setObject(self, forKey:description)
-      self
-    end
-  end
-
-  def on(event_type, options={}, &and_then)
-    master._on(event_type, options, &and_then)
-  end
-
-  def _on(_event_type, options={}, &and_then)
+  def on(_event_type, options={}, &and_then)
     and_then = (and_then || options[:completion]).weak!
     raise "event handler is required" unless and_then
     raise "event handler must accept one or two arguments" unless and_then.arity == 1 || and_then.arity == 2
@@ -141,16 +103,6 @@ class FQuery
     weak_owner = WeakRef.new(owner)
     event_type = EVENT_TYPES_MAP[_event_type]
     raise "event handler is unknown: #{_event_type.inspect}" unless event_type
-    # if event_type == FEventTypeValue
-    #   if initial_snap = $firebase_masters_by_fquery.objectForKey(self)
-    #     # p "HIT!", description
-    #     rmext_inline_or_on_main_q do
-    #       and_then.call(initial_snap)
-    #     end
-    #   else
-    #     # p "MISS!", description
-    #   end
-    # end
 
     disconnect_block = options[:disconnect]
     raise ":disconnect handler must not accept any arguments" if disconnect_block && disconnect_block.arity != 1
@@ -159,7 +111,6 @@ class FQuery
       wrapped_block = lambda do |snap|
         if weak_owner.weakref_alive?
           datasnap = FirebaseExt::DataSnapshot.new(snap)
-          $firebase_masters_by_fquery.setObject(datasnap, forKey:self)
           own_snapshot(weak_owner, datasnap)
           and_then.call(datasnap)
         end
@@ -182,7 +133,6 @@ class FQuery
       wrapped_block = lambda do |snap, prev|
         if weak_owner.weakref_alive?
           datasnap = FirebaseExt::DataSnapshot.new(snap)
-          $firebase_masters_by_fquery.setObject(datasnap, forKey:self)
           and_then.call(datasnap, prev)
         end
       end.weak!
@@ -213,10 +163,6 @@ class FQuery
   end
 
   def off(handle=nil)
-    master._off(handle)
-  end
-
-  def _off(handle=nil)
     if @_firebase_handlers
       @_firebase_handlers.off(handle)
     else
@@ -244,11 +190,6 @@ module FirebaseExt
     include RMExtensions::CommonMethods
 
     attr_accessor :value, :ref, :name
-
-    def dealloc
-      dealloc_inspect
-      super
-    end
 
     def initialize(snap=nil)
       if snap
@@ -288,9 +229,9 @@ module FirebaseExt
     include RMExtensions::CommonMethods
 
     attr_accessor :snapshot, :ref, :callback, :handle, :value_required
+    rmext_weak_attr_accessor :callback_owner
 
-    def dealloc
-      dealloc_inspect
+    def rmext_dealloc
       stop!
       super
     end
@@ -304,15 +245,18 @@ module FirebaseExt
     end
 
     def start!
+      weak_self = WeakRef.new(self)
       cancel_block = lambda do |err|
-        @cancelled = err
-        rmext_trigger(:cancelled, self)
-        rmext_trigger(:finished, self)
+        if weak_self.weakref_alive?
+          @cancelled = err
+          rmext_trigger(:cancelled, self)
+          rmext_trigger(:finished, self)
+        end
       end
       @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
         @snapshot = snap
         snap.requireValue! if value_required
-        @callback.call(snap) if @callback
+        callback.call(snap) if callback && callback_owner
         @ready = true
         rmext_trigger(:ready, self)
         rmext_trigger(:finished, self)
@@ -355,11 +299,6 @@ module FirebaseExt
     include RMExtensions::CommonMethods
 
     attr_accessor :watches
-
-    def dealloc
-      dealloc_inspect
-      super
-    end
 
     def clear!
       @cancelled = false
@@ -425,7 +364,10 @@ module FirebaseExt
       if opts[:required]
         data.value_required = true
       end
-      data.callback = block && RMExtensions::WeakBlock.new(block)
+      unless block.nil?
+        data.callback = block.weak!
+        data.callback_owner = block.owner
+      end
       watch_data(name, data)
       data.start!
       data
@@ -449,11 +391,6 @@ module FirebaseExt
     
     include RMExtensions::CommonMethods
 
-    def dealloc
-      dealloc_inspect
-      super
-    end
-
     attr_accessor :opts
 
     attr_reader :api, :root
@@ -461,6 +398,7 @@ module FirebaseExt
     def initialize(opts=nil)
       @opts = opts
       @dependencies = {}
+      @waiting_once = []
       internal_setup
     end
 
@@ -480,14 +418,14 @@ module FirebaseExt
       @ready = true
       rmext_trigger(:ready, self)
       rmext_trigger(:finished, self)
-      @waiting_once = nil
+      @waiting_once.pop
     end
 
     def cancelled!
       @cancelled = true
       rmext_trigger(:cancelled, self)
       rmext_trigger(:finished, self)
-      @waiting_once = nil
+      @waiting_once.pop
     end
 
     # override
@@ -495,7 +433,6 @@ module FirebaseExt
     end
 
     def internal_setup
-      rmext_cleanup
       @api = Coordinator.new
       @api.rmext_on(:finished) do
         check_ready
@@ -509,14 +446,6 @@ module FirebaseExt
       elsif @api.ready? && @dependencies.values.all?(&:ready?)
         ready!
       end
-    end
-
-    def reload
-      @ready = false
-      old_watches = @api.watches # keep them in memory momentarily
-      internal_setup
-      old_watches = nil # let them go
-      self
     end
 
     def watch(name, ref, opts={}, &block)
@@ -553,9 +482,10 @@ module FirebaseExt
       # return an unbinder
       block.weak!
       rmext_on(:ready, &block)
+      weak_block_owner = WeakRef.new(block.owner)
       weak_self = WeakRef.new(self)
       unbinder = proc do
-        if weak_self.weakref_alive?
+        if weak_self.weakref_alive? && weak_block_owner.weakref_alive?
           rmext_off(:ready, &block)
         end
       end
@@ -567,7 +497,7 @@ module FirebaseExt
       if ready? || cancelled?
         rmext_block_on_main_q(block, self)
       else
-        @waiting_once = [ self, block.owner ]
+        @waiting_once << block.owner
         rmext_once(:finished, &block)
       end
       self
@@ -616,9 +546,7 @@ module FirebaseExt
       return unless key
       key = [ className, key ]
       memory_queue.sync do
-        unless memory.objectForKey(key)
-          memory.setObject(val, forKey:key)
-        end
+        memory[key] ||= val
       end
       nil
     end
@@ -627,7 +555,7 @@ module FirebaseExt
       return unless key
       key = [ className, key ]
       memory_queue.sync do
-        return memory.objectForKey(key)
+        return memory[key]
       end
     end
 
@@ -646,7 +574,7 @@ module FirebaseExt
         Dispatch.once do
           # stores objects in memory, to form an identity map, so the same
           # object (by key) is not instantiated twice.
-          @memory = NSMapTable.strongToWeakObjectsMapTable
+          @memory = ::RMExtensions::StrongToWeakHash.new
         end
         @memory
       end
@@ -660,12 +588,9 @@ module FirebaseExt
       end
 
       def memory_keys
-        keys = []
-        keyEnumerator = memory.keyEnumerator
-        while key = keyEnumerator.nextObject
-          keys.push key
+        memory_queue.sync do
+          return memory.keys
         end
-        keys
       end
 
     end
@@ -678,12 +603,8 @@ module FirebaseExt
 
     attr_accessor :models
 
-    def dealloc
-      dealloc_inspect
-      super
-    end
-
     def initialize(*models)
+      @waiting_once = []
       @ready = false
       @models = models.flatten.compact
       @complete_blocks = {}
@@ -716,7 +637,7 @@ module FirebaseExt
     def ready!
       @ready = true
       rmext_trigger(:ready, ready_models)
-      @waiting_once = nil
+      @waiting_once.pop
     end
 
     def cancel!
@@ -727,7 +648,7 @@ module FirebaseExt
           model.cancel_block(&blk)
         end
       end
-      @waiting_once = nil
+      @waiting_once.pop
     end
 
     def ready?
@@ -738,7 +659,7 @@ module FirebaseExt
       if ready?
         rmext_block_on_main_q(block, ready_models)
       else
-        @waiting_once = [ self, block.owner ]
+        @waiting_once << block.owner
         rmext_once(:ready, &block)
       end
       self
@@ -754,20 +675,18 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    def dealloc
-      dealloc_inspect
-      super
-    end
-
     attr_accessor :transformations_table, :ref, :snaps, :cancelled
 
     def initialize(ref)
       @ref = ref
       @snaps = []
       @transformations_table = {}
+      weak_self = WeakRef.new(self)
       cancel_block = lambda do |err|
-        @cancelled = err
-        cancelled!
+        if weak_self.weakref_alive?
+          @cancelled = err
+          cancelled!
+        end
       end
       ref.on(:added, { :disconnect => cancel_block }) do |snap, prev|
         add(snap, prev)
@@ -856,6 +775,7 @@ module FirebaseExt
     end
 
     def changed(&block)
+      block.weak!
       weak_owner = WeakRef.new(block.owner)
       once(&block)
       rmext_on(:changed) do
@@ -866,12 +786,17 @@ module FirebaseExt
     end
 
     def added(&block)
+      block.weak!
       weak_owner = WeakRef.new(block.owner)
-      rmext_on(:added) do |snap, prev|
+      complete_block = proc do |model|
         if weak_owner.weakref_alive?
-          transform(snap).once do |model|
-            rmext_block_on_main_q(block, model, prev)
-          end
+          rmext_block_on_main_q(block, model)
+        end
+      end
+      weak_self = WeakRef.new(self)
+      rmext_on(:added) do |snap, prev|
+        if weak_owner.weakref_alive? && weak_self.weakref_alive?
+          transform(snap).once(&complete_block)
         end
       end
     end
