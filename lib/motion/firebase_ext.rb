@@ -498,7 +498,7 @@ module FirebaseExt
       if ready? || cancelled?
         rmext_block_on_main_q(block, self)
       else
-        @waiting_once << block.owner
+        @waiting_once << [ self, block.owner ]
         rmext_once(:finished, &block)
       end
       self
@@ -678,7 +678,7 @@ module FirebaseExt
       if ready?
         rmext_block_on_main_q(block, ready_models)
       else
-        @waiting_once << block.owner
+        @waiting_once << [ self, block.owner ]
         rmext_once(:ready, &block)
       end
       self
@@ -768,9 +768,7 @@ module FirebaseExt
       else
         rmext_trigger(:added, snap, prev)
       end
-      rmext_debounce(:changed) do
-        rmext_trigger(:changed)
-      end
+      rmext_trigger(:changed)
     end
 
     def remove(snap)
@@ -778,9 +776,7 @@ module FirebaseExt
         @snaps.delete_at(current_index)
       end
       rmext_trigger(:removed, snap)
-      rmext_debounce(:changed) do
-        rmext_trigger(:changed)
-      end
+      rmext_trigger(:changed)
     end
 
     def once(&block)
