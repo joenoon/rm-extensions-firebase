@@ -49,6 +49,7 @@ class FQuery
       handle = nil if object_context
       keys = [] + @map.keys
       while other = keys.pop
+        # p "other", other.rmext_object_desc
         next if object_context && other != object_context
         if hash = @map[other]
           hash_keys = [] + hash.keys
@@ -609,17 +610,21 @@ module FirebaseExt
       @models = models.flatten.compact
       @complete_blocks = {}
       if @models.any?
-        @models.each do |model|
-          @complete_blocks[model] = proc do
+        _models = @models.dup
+        _pairs = []
+        while model = _models.shift
+          blk = proc do
             # p "COMPLETE!"
             @complete_blocks.delete(model)
             if @complete_blocks.empty?
               ready!
             end
           end
+          @complete_blocks[model] = blk
+          _pairs << [ model, blk ]
         end
-        @complete_blocks.each_pair do |model, block|
-          model.once(&block)
+        while pair = _pairs.shift
+          pair[0].once(&pair[1])
         end
       else
         ready!
@@ -627,11 +632,25 @@ module FirebaseExt
     end
 
     def ready_models
-      models.select { |x| x.ready? }
+      outs = []
+      _models = [] + @models
+      while model = _models.shift
+        if model.ready?
+          outs << model
+        end
+      end
+      outs
     end
 
     def cancelled_models
-      models.select { |x| x.cancelled? }
+      outs = []
+      _models = [] + @models
+      while model = _models.shift
+        if model.cancelled?
+          outs << model
+        end
+      end
+      outs
     end
 
     def ready!
