@@ -190,25 +190,14 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :value, :ref, :name
+    attr_accessor :snap
 
-    def initialize(snap=nil)
-      if snap
-        @snap = snap
-        @ref = snap.ref
-        @name = snap.name
-        @value = snap.value
-      end
+    def initialize(snap)
+      @snap = snap
     end
 
     def hasValue?
       !value.nil?
-    end
-
-    def requireValue!
-      unless hasValue?
-        raise "Required value is missing: #{ref.description}"
-      end
     end
 
     def attr(keypath)
@@ -221,6 +210,30 @@ module FirebaseExt
 
     def valueForUndefinedKey(key)
       nil
+    end
+
+    def value
+      snap.value
+    end
+
+    def ref
+      snap.ref
+    end
+
+    def name
+      snap.name
+    end
+
+    def priority
+      snap.priority
+    end
+
+    def count
+      snap.childrenCount
+    end
+
+    def children
+      snap.children.each.map { |x| DataSnapshot.new(x) }
     end
 
   end
@@ -256,12 +269,17 @@ module FirebaseExt
       end
       @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
         @snapshot = snap
-        snap.requireValue! if value_required
-        callback.call(snap) if callback && callback_owner
-        @ready = true
-        rmext_trigger(:ready, self)
-        rmext_trigger(:finished, self)
-        # p "ready__"
+        if value_required && !snap.hasValue?
+          cancel_block.call(NSError.errorWithDomain("requirement failure", code:0, userInfo:{
+            :error => "requirement_failure"
+          }))
+        else
+          callback.call(snap) if callback && callback_owner
+          @ready = true
+          rmext_trigger(:ready, self)
+          rmext_trigger(:finished, self)
+          # p "ready__"
+        end
       end
     end
 
@@ -696,42 +714,24 @@ module FirebaseExt
 
     attr_accessor :transformations_table, :ref, :snaps, :cancelled
 
-    def initialize(ref)
-      @ref = ref
-      @snaps = []
-      @transformations_table = {}
-      weak_self = WeakRef.new(self)
-      cancel_block = lambda do |err|
-        if weak_self.weakref_alive?
-          @cancelled = err
-          cancelled!
-        end
-      end
-      ref.on(:added, { :disconnect => cancel_block }) do |snap, prev|
-        add(snap, prev)
-      end
-      ref.on(:removed) do |snap|
-        remove(snap)
-      end
-      ref.on(:moved) do |snap, prev|
-        add(snap, prev)
-      end
+    # public
+    def ready?
+      !!@ready
     end
 
-    def cancelled!
-      rmext_trigger(:cancelled, self)
+    # public
+    def cancelled?
+      !!@cancelled
     end
 
-    def transform=(block)
-      if block
-        @transform_block_weak_owner = WeakRef.new(block.owner)
-        @transform_block = block.weak!
-      else
-        @transform_block_weak_owner = nil
-        @transform_block = nil
-      end
+    # returns transformations, if they are Models, they are not guaranteed ready
+    def results
+      @snaps.map do |snap|
+        store_transform(snap)
+      end.compact
     end
 
+    # overridable
     def transform(snap)
       if block = @transform_block
         if @transform_block_weak_owner.weakref_alive?
@@ -742,44 +742,8 @@ module FirebaseExt
       end
     end
 
-    def store_transform(snap)
-      @transformations_table[snap] ||= transform(snap)
-    end
-
-    def results
-      @snaps.map do |snap|
-        store_transform(snap)
-      end.compact
-    end
-
-    def add(snap, prev)
-      moved = false
-      if current_index = @snaps.index { |existing| existing.name == snap.name }
-        moved = true
-        @snaps.delete_at(current_index)
-      end
-      if prev && (index = @snaps.index { |existing| existing.name == prev })
-        @snaps.insert(index + 1, snap)
-      else
-        @snaps.unshift(snap)
-      end
-      if moved
-        rmext_trigger(:moved, snap, prev)
-      else
-        rmext_trigger(:added, snap, prev)
-      end
-      rmext_trigger(:changed)
-    end
-
-    def remove(snap)
-      if current_index = @snaps.index { |existing| existing.name == snap.name }
-        @snaps.delete_at(current_index)
-      end
-      rmext_trigger(:removed, snap)
-      rmext_trigger(:changed)
-    end
-
-    def once(&block)
+    # public, completes with ready transformations
+    def transformed(&block)
       results = self.results
       if (snap = results.first) && snap.is_a?(Model)
         FirebaseExt::Batch.new(results).once(&block)
@@ -789,30 +753,228 @@ module FirebaseExt
       self
     end
 
-    def changed(&block)
+    # completes with `self` once, when the collection is ready.
+    # retains `self` and the sender until complete
+    def once(&block)
+      if ready?
+        rmext_block_on_main_q(block, self)
+      else
+        @waiting_once << [ self, block.owner ]
+        rmext_once(:ready, &block)
+      end
+      self
+    end
+
+    # completes with `self` immediately if ready, and every time the collection :ready fires.
+    # does not retain `self` or the sender.
+    # returns an "unbinder" that can be called to stop listening.
+    def always(&block)
+      return false if cancelled?
+      if ready?
+        rmext_block_on_main_q(block, self)
+      end
+      # return an unbinder
       block.weak!
-      weak_owner = WeakRef.new(block.owner)
-      once(&block)
-      rmext_on(:changed) do
-        if weak_owner.weakref_alive?
-          once(&block)
+      rmext_on(:ready, &block)
+      weak_block_owner = WeakRef.new(block.owner)
+      weak_self = WeakRef.new(self)
+      unbinder = proc do
+        if weak_self.weakref_alive? && weak_block_owner.weakref_alive?
+          rmext_off(:ready, &block)
         end
+      end
+      rmext_once(:cancelled, &unbinder)
+      unbinder
+    end
+
+    # completes with `self` every time the collection :changed fires.
+    # does not retain `self` or the sender.
+    # returns an "unbinder" that can be called to stop listening.
+    def changed(&block)
+      return false if cancelled?
+      # return an unbinder
+      block.weak!
+      rmext_on(:changed, &block)
+      weak_block_owner = WeakRef.new(block.owner)
+      weak_self = WeakRef.new(self)
+      unbinder = proc do
+        if weak_self.weakref_alive? && weak_block_owner.weakref_alive?
+          rmext_off(:changed, &block)
+        end
+      end
+      rmext_once(:cancelled, &unbinder)
+      unbinder
+    end
+
+    # completes with `self`, `snap`, `prev` every time the collection :added fires.
+    # does not retain `self` or the sender.
+    # returns an "unbinder" that can be called to stop listening.
+    def added(&block)
+      return false if cancelled?
+      # return an unbinder
+      block.weak!
+      rmext_on(:added, &block)
+      weak_block_owner = WeakRef.new(block.owner)
+      weak_self = WeakRef.new(self)
+      unbinder = proc do
+        if weak_self.weakref_alive? && weak_block_owner.weakref_alive?
+          rmext_off(:added, &block)
+        end
+      end
+      rmext_once(:cancelled, &unbinder)
+      unbinder
+    end
+
+    # completes with `self`, `snap` every time the collection :removed fires.
+    # does not retain `self` or the sender.
+    # returns an "unbinder" that can be called to stop listening.
+    def removed(&block)
+      return false if cancelled?
+      # return an unbinder
+      block.weak!
+      rmext_on(:removed, &block)
+      weak_block_owner = WeakRef.new(block.owner)
+      weak_self = WeakRef.new(self)
+      unbinder = proc do
+        if weak_self.weakref_alive? && weak_block_owner.weakref_alive?
+          rmext_off(:removed, &block)
+        end
+      end
+      rmext_once(:cancelled, &unbinder)
+      unbinder
+    end
+
+    # completes with `self`, `snap`, `prev` every time the collection :moved fires.
+    # does not retain `self` or the sender.
+    # returns an "unbinder" that can be called to stop listening.
+    def moved(&block)
+      return false if cancelled?
+      # return an unbinder
+      block.weak!
+      rmext_on(:moved, &block)
+      weak_block_owner = WeakRef.new(block.owner)
+      weak_self = WeakRef.new(self)
+      unbinder = proc do
+        if weak_self.weakref_alive? && weak_block_owner.weakref_alive?
+          rmext_off(:moved, &block)
+        end
+      end
+      rmext_once(:cancelled, &unbinder)
+      unbinder
+    end
+
+    # internal
+    def initialize(ref)
+      @waiting_once = []
+      @snaps = []
+      @transformations_table = {}
+      setup_ref(ref)
+    end
+
+    # internal
+    def setup_ref(ref, mode=:truncate)
+      @ready = false
+      @cancelled = false
+      weak_self = WeakRef.new(self)
+      cancel_block = lambda do |err|
+        if weak_self.weakref_alive?
+          @cancelled = err
+          cancelled!
+        end
+      end
+      ref.once(:value, { :disconnect => cancel_block }) do |collection|
+        @collection = collection
+        children = collection.children
+        case mode
+        when :append
+          @snaps += children
+        when :prepend
+          @snaps = children + @snaps
+        when :truncate
+          @snaps = [] + children
+        end
+        children.each do |child|
+          prev = @snaps[@snaps.index(child) - 1]
+          rmext_trigger(:added, self, child, (prev ? prev.name : nil))
+        end
+        ref.on(:added) do |snap, prev|
+          add(snap, prev)
+        end
+        ref.on(:removed) do |snap|
+          remove(snap)
+        end
+        ref.on(:moved) do |snap, prev|
+          add(snap, prev)
+        end
+        ready!
+      end
+      @ref = ref
+    end
+
+    # internal
+    def ready!
+      @ready = true
+      rmext_trigger(:ready, self)
+      rmext_trigger(:changed, self)
+      @waiting_once.pop
+    end
+
+    # internal
+    def cancelled!
+      @cancelled = true
+      rmext_trigger(:cancelled, self)
+    end
+
+    # internal, allows the user to pass a block for transformations instead of subclassing
+    # and overriding #transform, for one-off cases
+    def transform=(block)
+      if block
+        @transform_block_weak_owner = WeakRef.new(block.owner)
+        @transform_block = block.weak!
+      else
+        @transform_block_weak_owner = nil
+        @transform_block = nil
       end
     end
 
-    def added(&block)
-      block.weak!
-      weak_owner = WeakRef.new(block.owner)
-      complete_block = proc do |model|
-        if weak_owner.weakref_alive?
-          rmext_block_on_main_q(block, model)
+    # internal
+    def store_transform(snap)
+      @transformations_table[snap] ||= transform(snap)
+    end
+
+    # internal
+    def add(snap, prev)
+      moved = false
+      if current_index = @snaps.index { |existing| existing.name == snap.name }
+        if current_index == 0 && prev.nil?
+          return
+        elsif current_prev = @snaps[current_index - 1]
+          if current_prev.name == prev
+            return
+          end
         end
+        moved = true
+        @snaps.delete_at(current_index)
       end
-      weak_self = WeakRef.new(self)
-      rmext_on(:added) do |snap, prev|
-        if weak_owner.weakref_alive? && weak_self.weakref_alive?
-          transform(snap).once(&complete_block)
-        end
+      if prev && (index = @snaps.index { |existing| existing.name == prev })
+        @snaps.insert(index + 1, snap)
+      else
+        @snaps.unshift(snap)
+      end
+      if moved
+        rmext_trigger(:moved, self, snap, prev)
+      else
+        rmext_trigger(:added, self, snap, prev)
+      end
+      rmext_trigger(:changed, self)
+    end
+
+    # internal
+    def remove(snap)
+      if current_index = @snaps.index { |existing| existing.name == snap.name }
+        @snaps.delete_at(current_index)
+        rmext_trigger(:removed, self, snap)
+        rmext_trigger(:changed, self)
       end
     end
 
