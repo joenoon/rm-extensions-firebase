@@ -948,10 +948,8 @@ module FirebaseExt
       if current_index = @snaps.index { |existing| existing.name == snap.name }
         if current_index == 0 && prev.nil?
           return
-        elsif current_prev = @snaps[current_index - 1]
-          if current_prev.name == prev
-            return
-          end
+        elsif current_index > 0 && prev && (current_prev = @snaps[current_index - 1]) && current_prev.name == prev
+          return
         end
         moved = true
         @snaps.delete_at(current_index)
