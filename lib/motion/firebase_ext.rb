@@ -186,6 +186,8 @@ end
 
 module FirebaseExt
 
+  DEBUG_IDENTITY_MAP = RMExtensions::Env['rmext_firebase_debug_identity_map'] == '1'
+
   class DataSnapshot
 
     include RMExtensions::CommonMethods
@@ -549,10 +551,14 @@ module FirebaseExt
     # this is the method you should call
     def self.get(opts=nil)
       if opts && existing = get_in_memory(opts)
-        # p "HIT!", opts
+        if DEBUG_IDENTITY_MAP
+          p "HIT!", className, opts
+        end
         return existing
       else
-        # p "MISS!", opts
+        if DEBUG_IDENTITY_MAP
+          p "MISS!", className, opts
+        end
         res = new(opts)
         if opts
           set_in_memory(opts, res)
