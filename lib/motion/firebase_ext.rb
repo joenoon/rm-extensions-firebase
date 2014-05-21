@@ -187,6 +187,7 @@ end
 module FirebaseExt
 
   DEBUG_IDENTITY_MAP = RMExtensions::Env['rmext_firebase_debug_identity_map'] == '1'
+  DEBUG_MODEL_DEALLOC = RMExtensions::Env['rmext_firebase_debug_model_dealloc'] == '1'
 
   class DataSnapshot
 
@@ -423,6 +424,13 @@ module FirebaseExt
       internal_setup
     end
 
+    def dealloc
+      if DEBUG_MODEL_DEALLOC
+        p " - dealloc!"
+      end
+      super
+    end
+
     def ready?
       !!@ready
     end
@@ -550,74 +558,29 @@ module FirebaseExt
 
     # this is the method you should call
     def self.get(opts=nil)
-      if opts && existing = get_in_memory(opts)
+      if opts && existing = identity_map[[ className, opts ]]
         if DEBUG_IDENTITY_MAP
-          p "HIT!", className, opts
+          p "HIT!", className, opts, existing.retainCount
         end
-        return existing
+        return existing.retain.autorelease
       else
         if DEBUG_IDENTITY_MAP
           p "MISS!", className, opts
         end
         res = new(opts)
         if opts
-          set_in_memory(opts, res)
+          identity_map[[ className, opts ]] ||= res
         end
         res
       end
     end
 
-    def self.set_in_memory(key, val)
-      return unless key
-      key = [ className, key ]
-      memory_queue.sync do
-        memory[key] ||= val
-      end
-      nil
+    Dispatch.once do
+      @@identity_map = RMExtensions::IdentityMap.new
     end
 
-    def self.get_in_memory(key)
-      return unless key
-      key = [ className, key ]
-      memory_queue.sync do
-        return memory[key]
-      end
-    end
-
-    def self.memory_queue
-      ::FirebaseExt::Model::Memory.memory_queue
-    end
-
-    def self.memory
-      ::FirebaseExt::Model::Memory.memory
-    end
-
-    module Memory
-      extend self
-
-      def memory
-        Dispatch.once do
-          # stores objects in memory, to form an identity map, so the same
-          # object (by key) is not instantiated twice.
-          @memory = ::RMExtensions::StrongToWeakHash.new
-        end
-        @memory
-      end
-
-      def memory_queue
-        Dispatch.once do
-          # a queue which all access to @memory will use
-          @memory_queue = Dispatch::Queue.new("#{NSBundle.mainBundle.bundleIdentifier}.FirebaseExt.Model.memory")
-        end
-        @memory_queue
-      end
-
-      def memory_keys
-        memory_queue.sync do
-          return memory.keys
-        end
-      end
-
+    def self.identity_map
+      @@identity_map
     end
 
   end
@@ -971,6 +934,7 @@ module FirebaseExt
         rmext_trigger(:added, self, snap, prev)
       end
       rmext_trigger(:changed, self)
+      rmext_trigger(:ready, self) if ready?
     end
 
     # internal
@@ -979,7 +943,33 @@ module FirebaseExt
         @snaps.delete_at(current_index)
         rmext_trigger(:removed, self, snap)
         rmext_trigger(:changed, self)
+        rmext_trigger(:ready, self) if ready?
       end
+    end
+
+    # this is the method you should call
+    def self.get(ref)
+      if existing = identity_map[ref.description]
+        if DEBUG_IDENTITY_MAP
+          p "HIT!", className, ref.description, existing.retainCount
+        end
+        return existing.retain.autorelease
+      else
+        if DEBUG_IDENTITY_MAP
+          p "MISS!", className, ref.description
+        end
+        res = new(ref)
+        identity_map[ref.description] ||= res
+        res
+      end
+    end
+
+    Dispatch.once do
+      @@identity_map = RMExtensions::IdentityMap.new
+    end
+
+    def self.identity_map
+      @@identity_map
     end
 
   end
