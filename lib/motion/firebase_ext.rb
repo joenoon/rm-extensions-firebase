@@ -589,20 +589,29 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :models
+    attr_accessor :models, :ready_models
 
     def initialize(*models)
       @waiting_once = []
       @ready = false
       @models = models.flatten.compact
+      @ready_models = []
+      @ready_count = 0
+      @pending_count = @models.size
       @complete_blocks = {}
       if @models.any?
         _models = @models.dup
         _pairs = []
-        while model = _models.shift
+        while _models.size > 0
+          model = _models.shift
           blk = proc do
             # p "COMPLETE!"
             @complete_blocks.delete(model)
+            index = @models.index(model)
+            @ready_models[index] = model
+            @ready_count += 1
+            @pending_count -= 1
+            rmext_trigger(:one_ready, model, index)
             if @complete_blocks.empty?
               ready!
             end
@@ -618,27 +627,41 @@ module FirebaseExt
       end
     end
 
-    def ready_models
+    # def ready_models
+    #   outs = []
+    #   _models = [] + @models
+    #   while model = _models.shift
+    #     if model.ready?
+    #       outs << model
+    #     end
+    #   end
+    #   outs
+    # end
+
+    def ready_tuples
       outs = []
       _models = [] + @models
-      while model = _models.shift
+      i = 0
+      while _models.size > 0
+        model = _models.shift
         if model.ready?
-          outs << model
+          outs << [ model, i ]
         end
+        i += 1
       end
       outs
     end
 
-    def cancelled_models
-      outs = []
-      _models = [] + @models
-      while model = _models.shift
-        if model.cancelled?
-          outs << model
-        end
-      end
-      outs
-    end
+    # def cancelled_models
+    #   outs = []
+    #   _models = [] + @models
+    #   while model = _models.shift
+    #     if model.cancelled?
+    #       outs << model
+    #     end
+    #   end
+    #   outs
+    # end
 
     def ready!
       @ready = true
@@ -667,6 +690,59 @@ module FirebaseExt
       else
         @waiting_once << [ self, block.owner ]
         rmext_once(:ready, &block)
+      end
+      self
+    end
+
+    def in_batches_of(number, &block)
+      if ready?
+        rmext_block_on_main_q(block, ready_tuples)
+      else
+        @waiting_once << [ self, block.owner ]
+        counter = 0
+        tuples = []
+        one_ready_block = proc do |model, i|
+          tuples << [ model, i ]
+          if @pending_count == 0 || counter.modulo(number) == 0
+            _tuples = tuples.dup
+            tuples = []
+            rmext_block_on_main_q(block, _tuples)
+          end
+          counter += 1
+          if @pending_count == 0
+            rmext_block_on_main_q(block, nil)
+            rmext_off(:one_ready, &one_ready_block)
+            @waiting_once.pop
+          end
+        end
+        rmext_on(:one_ready, &one_ready_block)
+      end
+      self
+    end
+
+    def in_batches_of_seconds(seconds, &block)
+      if ready?
+        rmext_block_on_main_q(block, ready_tuples)
+      else
+        @waiting_once << [ self, block.owner ]
+        start_time = Time.now
+        tuples = []
+        one_ready_block = proc do |model, i|
+          tuples << [ model, i ]
+          now = Time.now
+          if @pending_count == 0 || now - start_time >= seconds
+            start_time = now
+            _tuples = tuples.dup
+            tuples = []
+            rmext_block_on_main_q(block, _tuples)
+          end
+          if @pending_count == 0
+            rmext_block_on_main_q(block, nil)
+            rmext_off(:one_ready, &one_ready_block)
+            @waiting_once.pop
+          end
+        end
+        rmext_on(:one_ready, &one_ready_block)
       end
       self
     end
@@ -716,6 +792,28 @@ module FirebaseExt
       results = self.results
       if (snap = results.first) && snap.is_a?(Model)
         FirebaseExt::Batch.new(results).once(&block)
+      else
+        rmext_block_on_main_q(block, results)
+      end
+      self
+    end
+
+    # public, completes with ready transformations
+    def transformed_in_batches_of(number, &block)
+      results = self.results
+      if (snap = results.first) && snap.is_a?(Model)
+        FirebaseExt::Batch.new(results).in_batches_of(number, &block)
+      else
+        rmext_block_on_main_q(block, results)
+      end
+      self
+    end
+
+    # public, completes with ready transformations
+    def transformed_in_batches_of_seconds(seconds, &block)
+      results = self.results
+      if (snap = results.first) && snap.is_a?(Model)
+        FirebaseExt::Batch.new(results).in_batches_of_seconds(seconds, &block)
       else
         rmext_block_on_main_q(block, results)
       end
