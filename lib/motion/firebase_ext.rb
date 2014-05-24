@@ -6,6 +6,18 @@ class Firebase
       childByAppendingPath(names.join('/'))
     end
   end
+
+  def limited(limit)
+    queryLimitedToNumberOfChildren(limit)
+  end
+
+  def starting_at(priority)
+    queryStartingAtPriority(priority)
+  end
+
+  def ending_at(priority)
+    queryEndingAtPriority(priority)
+  end
 end
 
 class FQuery
@@ -21,6 +33,18 @@ class FQuery
     :removed => FEventTypeChildRemoved,
     :value => FEventTypeValue
   }
+
+  def limited(limit)
+    queryLimitedToNumberOfChildren(limit)
+  end
+
+  def starting_at(priority)
+    queryStartingAtPriority(priority)
+  end
+
+  def ending_at(priority)
+    queryEndingAtPriority(priority)
+  end
 
   class Holder
     
@@ -48,12 +72,14 @@ class FQuery
       object_context = !handle.is_a?(Integer) && handle
       handle = nil if object_context
       keys = [] + @map.keys
-      while other = keys.pop
+      while keys.size > 0
+        other = keys.shift
         # p "other", other.rmext_object_desc
         next if object_context && other != object_context
         if hash = @map[other]
           hash_keys = [] + hash.keys
-          while handler = hash_keys.pop
+          while hash_keys.size > 0
+            handler = hash_keys.shift
             if !handle || handler == handle
               fquery = hash[handler]
               @own.delete(fquery)
@@ -326,7 +352,8 @@ module FirebaseExt
       @cancelled = false
       @ready = false
       keys = @watches.keys.dup
-      while name = keys.pop
+      while keys.size > 0
+        name = keys.shift
         watch = @watches[name]
         watch.stop!
       end
@@ -362,24 +389,6 @@ module FirebaseExt
       @watches[name] ||= Listener.new
     end
 
-    def watch_data(name, data)
-      if current = @watches[name]
-        if current == data || current.description == data.description
-          return
-        end
-        current.stop!
-        current.rmext_off(:finished, self)
-      end
-      data.rmext_on(:finished) do
-        if @watches.values.all?(&:ready?)
-          ready!
-        elsif @watches.values.any?(&:cancelled?)
-          cancelled!
-        end
-      end
-      @watches[name] = data
-    end
-
     def watch(name, ref, opts={}, &block)
       data = Listener.new
       data.ref = ref
@@ -390,7 +399,32 @@ module FirebaseExt
         data.callback = block.weak!
         data.callback_owner = block.owner
       end
-      watch_data(name, data)
+      if current = @watches[name]
+        if current == data || current.description == data.description
+          return
+        end
+        current.stop!
+        current.rmext_off(:finished, self)
+      end
+      @watches[name] = data
+      data.rmext_on(:finished) do
+        readies = 0
+        cancelled = 0
+        size = @watches.size
+        @watches.each_pair do |k, v|
+          if v.ready?
+            readies += 1
+          elsif v.cancelled?
+            cancelled += 1
+            break
+          end
+        end
+        if cancelled > 0
+          cancelled!
+        elsif readies == size
+          ready!
+        end
+      end
       data.start!
       data
     end
@@ -420,6 +454,8 @@ module FirebaseExt
     def initialize(opts=nil)
       @opts = opts
       @dependencies = {}
+      @dependencies_cancelled = {}
+      @dependencies_ready = {}
       @waiting_once = []
       internal_setup
     end
@@ -470,9 +506,11 @@ module FirebaseExt
     end
 
     def check_ready
-      if @api.cancelled? || @dependencies.values.any?(&:cancelled?)
+      # p "check_ready cancelled?", @api.cancelled?, @dependencies_cancelled.size
+      # p "check_ready ready?", @api.ready?, @dependencies_ready.size, @dependencies.size
+      if @api.cancelled? || @dependencies_cancelled.size > 0
         cancelled!
-      elsif @api.ready? && @dependencies.values.all?(&:ready?)
+      elsif @api.ready? && @dependencies_ready.size == @dependencies.size
         ready!
       end
     end
@@ -498,8 +536,20 @@ module FirebaseExt
     def depend(name, model)
       @dependencies[name] = model
       rmext_ivar(name, model)
-      model.rmext_on(:finished) do
+      track_dependency_state(model)
+      model.rmext_on(:finished) do |_model|
+        track_dependency_state(_model)
         check_ready
+      end
+    end
+
+    def track_dependency_state(model)
+      if model.ready?
+        @dependencies_ready[model] = true
+        @dependencies_cancelled.delete(model)
+      elsif model.cancelled?
+        @dependencies_cancelled[model] = true
+        @dependencies_ready.delete(model)
       end
     end
 
@@ -611,7 +661,6 @@ module FirebaseExt
             @ready_models[index] = model
             @ready_count += 1
             @pending_count -= 1
-            rmext_trigger(:one_ready, model, index)
             if @complete_blocks.empty?
               ready!
             end
@@ -627,42 +676,6 @@ module FirebaseExt
       end
     end
 
-    # def ready_models
-    #   outs = []
-    #   _models = [] + @models
-    #   while model = _models.shift
-    #     if model.ready?
-    #       outs << model
-    #     end
-    #   end
-    #   outs
-    # end
-
-    def ready_tuples
-      outs = []
-      _models = [] + @models
-      i = 0
-      while _models.size > 0
-        model = _models.shift
-        if model.ready?
-          outs << [ model, i ]
-        end
-        i += 1
-      end
-      outs
-    end
-
-    # def cancelled_models
-    #   outs = []
-    #   _models = [] + @models
-    #   while model = _models.shift
-    #     if model.cancelled?
-    #       outs << model
-    #     end
-    #   end
-    #   outs
-    # end
-
     def ready!
       @ready = true
       rmext_trigger(:ready, ready_models)
@@ -671,7 +684,8 @@ module FirebaseExt
 
     def cancel!
       models_outstanding = @complete_blocks.keys.dup
-      while model = models_outstanding.pop
+      while models_outstanding.size > 0
+        model = models_outstanding.shift
         if blk = @complete_blocks[model]
           @complete_blocks.delete(model)
           model.cancel_block(&blk)
@@ -694,59 +708,6 @@ module FirebaseExt
       self
     end
 
-    def in_batches_of(number, &block)
-      if ready?
-        rmext_block_on_main_q(block, ready_tuples)
-      else
-        @waiting_once << [ self, block.owner ]
-        counter = 0
-        tuples = []
-        one_ready_block = proc do |model, i|
-          tuples << [ model, i ]
-          if @pending_count == 0 || counter.modulo(number) == 0
-            _tuples = tuples.dup
-            tuples = []
-            rmext_block_on_main_q(block, _tuples)
-          end
-          counter += 1
-          if @pending_count == 0
-            rmext_block_on_main_q(block, nil)
-            rmext_off(:one_ready, &one_ready_block)
-            @waiting_once.pop
-          end
-        end
-        rmext_on(:one_ready, &one_ready_block)
-      end
-      self
-    end
-
-    def in_batches_of_seconds(seconds, &block)
-      if ready?
-        rmext_block_on_main_q(block, ready_tuples)
-      else
-        @waiting_once << [ self, block.owner ]
-        start_time = Time.now
-        tuples = []
-        one_ready_block = proc do |model, i|
-          tuples << [ model, i ]
-          now = Time.now
-          if @pending_count == 0 || now - start_time >= seconds
-            start_time = now
-            _tuples = tuples.dup
-            tuples = []
-            rmext_block_on_main_q(block, _tuples)
-          end
-          if @pending_count == 0
-            rmext_block_on_main_q(block, nil)
-            rmext_off(:one_ready, &one_ready_block)
-            @waiting_once.pop
-          end
-        end
-        rmext_on(:one_ready, &one_ready_block)
-      end
-      self
-    end
-
     def cancel_block(&block)
       rmext_off(:ready, &block)
     end
@@ -757,7 +718,7 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :transformations_table, :ref, :snaps, :cancelled
+    attr_accessor :transformations_table, :ref, :snaps, :cancelled, :transformations
 
     # public
     def ready?
@@ -767,13 +728,6 @@ module FirebaseExt
     # public
     def cancelled?
       !!@cancelled
-    end
-
-    # returns transformations, if they are Models, they are not guaranteed ready
-    def results
-      @snaps.map do |snap|
-        store_transform(snap)
-      end.compact
     end
 
     # overridable
@@ -789,33 +743,10 @@ module FirebaseExt
 
     # public, completes with ready transformations
     def transformed(&block)
-      results = self.results
-      if (snap = results.first) && snap.is_a?(Model)
-        FirebaseExt::Batch.new(results).once(&block)
+      if (snap = transformations.first) && snap.is_a?(Model)
+        FirebaseExt::Batch.new(transformations).once(&block)
       else
-        rmext_block_on_main_q(block, results)
-      end
-      self
-    end
-
-    # public, completes with ready transformations
-    def transformed_in_batches_of(number, &block)
-      results = self.results
-      if (snap = results.first) && snap.is_a?(Model)
-        FirebaseExt::Batch.new(results).in_batches_of(number, &block)
-      else
-        rmext_block_on_main_q(block, results)
-      end
-      self
-    end
-
-    # public, completes with ready transformations
-    def transformed_in_batches_of_seconds(seconds, &block)
-      results = self.results
-      if (snap = results.first) && snap.is_a?(Model)
-        FirebaseExt::Batch.new(results).in_batches_of_seconds(seconds, &block)
-      else
-        rmext_block_on_main_q(block, results)
+        rmext_block_on_main_q(block, transformations)
       end
       self
     end
@@ -934,12 +865,14 @@ module FirebaseExt
     def initialize(ref)
       @waiting_once = []
       @snaps = []
+      @snaps_by_name = {}
+      @transformations = []
       @transformations_table = {}
       setup_ref(ref)
     end
 
     # internal
-    def setup_ref(ref, mode=:truncate)
+    def setup_ref(ref)
       @ready = false
       @cancelled = false
       weak_self = WeakRef.new(self)
@@ -949,30 +882,16 @@ module FirebaseExt
           cancelled!
         end
       end
+      ref.on(:added) do |snap, prev|
+        add(snap, prev)
+      end
+      ref.on(:removed) do |snap|
+        remove(snap)
+      end
+      ref.on(:moved) do |snap, prev|
+        add(snap, prev)
+      end
       ref.once(:value, { :disconnect => cancel_block }) do |collection|
-        @collection = collection
-        children = collection.children
-        case mode
-        when :append
-          @snaps += children
-        when :prepend
-          @snaps = children + @snaps
-        when :truncate
-          @snaps = [] + children
-        end
-        children.each do |child|
-          prev = @snaps[@snaps.index(child) - 1]
-          rmext_trigger(:added, self, child, (prev ? prev.name : nil))
-        end
-        ref.on(:added) do |snap, prev|
-          add(snap, prev)
-        end
-        ref.on(:removed) do |snap|
-          remove(snap)
-        end
-        ref.on(:moved) do |snap, prev|
-          add(snap, prev)
-        end
         ready!
       end
       @ref = ref
@@ -1012,19 +931,36 @@ module FirebaseExt
     # internal
     def add(snap, prev)
       moved = false
-      if current_index = @snaps.index { |existing| existing.name == snap.name }
+
+      if current_index = @snaps_by_name[snap.name]
         if current_index == 0 && prev.nil?
           return
-        elsif current_index > 0 && prev && (current_prev = @snaps[current_index - 1]) && current_prev.name == prev
+        elsif current_index > 0 && prev && @snaps_by_name[prev] == current_index - 1
           return
         end
         moved = true
         @snaps.delete_at(current_index)
+        @transformations.delete_at(current_index)
+        if was_index = @snaps_by_name.delete(snap.name)
+          @snaps_by_name.each_pair do |k, v|
+            if v > was_index
+              @snaps_by_name[k] -= 1
+            end
+          end
+        end
       end
-      if prev && (index = @snaps.index { |existing| existing.name == prev })
-        @snaps.insert(index + 1, snap)
+      if prev && (index = @snaps_by_name[prev])
+        new_index = index + 1
+        @snaps.insert(new_index, snap)
+        @transformations.insert(new_index, store_transform(snap))
+        @snaps_by_name[snap.name] = new_index
       else
         @snaps.unshift(snap)
+        @transformations.unshift(store_transform(snap))
+        @snaps_by_name.each_pair do |k, v|
+          @snaps_by_name[k] += 1
+        end
+        @snaps_by_name[snap.name] = 0
       end
       if moved
         rmext_trigger(:moved, self, snap, prev)
@@ -1037,8 +973,14 @@ module FirebaseExt
 
     # internal
     def remove(snap)
-      if current_index = @snaps.index { |existing| existing.name == snap.name }
+      if current_index = @snaps_by_name[snap.name]
         @snaps.delete_at(current_index)
+        @transformations.delete_at(current_index)
+        @snaps_by_name.each_pair do |k, v|
+          if v > current_index
+            @snaps_by_name[k] -= 1
+          end
+        end
         rmext_trigger(:removed, self, snap)
         rmext_trigger(:changed, self)
         rmext_trigger(:ready, self) if ready?
