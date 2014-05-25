@@ -479,18 +479,24 @@ module FirebaseExt
       ready? || cancelled?
     end
 
+    def clear_cycle!
+      rmext_on_main_q do
+        @waiting_once = []
+      end
+    end
+
     def ready!
       @ready = true
       rmext_trigger(:ready, self)
       rmext_trigger(:finished, self)
-      @waiting_once.pop
+      clear_cycle!
     end
 
     def cancelled!
       @cancelled = true
       rmext_trigger(:cancelled, self)
       rmext_trigger(:finished, self)
-      @waiting_once.pop
+      clear_cycle!
     end
 
     # override
@@ -676,10 +682,16 @@ module FirebaseExt
       end
     end
 
+    def clear_cycle!
+      rmext_on_main_q do
+        @waiting_once = []
+      end
+    end
+
     def ready!
       @ready = true
       rmext_trigger(:ready, ready_models)
-      @waiting_once.pop
+      clear_cycle!
     end
 
     def cancel!
@@ -691,7 +703,7 @@ module FirebaseExt
           model.cancel_block(&blk)
         end
       end
-      @waiting_once.pop
+      clear_cycle!
     end
 
     def ready?
@@ -898,17 +910,25 @@ module FirebaseExt
     end
 
     # internal
+    def clear_cycle!
+      rmext_on_main_q do
+        @waiting_once = []
+      end
+    end
+
+    # internal
     def ready!
       @ready = true
       rmext_trigger(:ready, self)
       rmext_trigger(:changed, self)
-      @waiting_once.pop
+      clear_cycle!
     end
 
     # internal
     def cancelled!
       @cancelled = true
       rmext_trigger(:cancelled, self)
+      clear_cycle!
     end
 
     # internal, allows the user to pass a block for transformations instead of subclassing
