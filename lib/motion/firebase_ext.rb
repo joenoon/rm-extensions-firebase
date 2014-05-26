@@ -480,9 +480,7 @@ module FirebaseExt
     end
 
     def clear_cycle!
-      rmext_on_main_q do
-        @waiting_once = []
-      end
+      @waiting_once = []
     end
 
     def ready!
@@ -618,7 +616,7 @@ module FirebaseExt
         if DEBUG_IDENTITY_MAP
           p "HIT!", className, opts, existing.retainCount
         end
-        return existing.retain.autorelease
+        return existing
       else
         if DEBUG_IDENTITY_MAP
           p "MISS!", className, opts
@@ -683,9 +681,7 @@ module FirebaseExt
     end
 
     def clear_cycle!
-      rmext_on_main_q do
-        @waiting_once = []
-      end
+      @waiting_once = []
     end
 
     def ready!
@@ -911,9 +907,7 @@ module FirebaseExt
 
     # internal
     def clear_cycle!
-      rmext_on_main_q do
-        @waiting_once = []
-      end
+      @waiting_once = []
     end
 
     # internal
@@ -1013,7 +1007,7 @@ module FirebaseExt
         if DEBUG_IDENTITY_MAP
           p "HIT!", className, ref.description, existing.retainCount
         end
-        return existing.retain.autorelease
+        return existing
       else
         if DEBUG_IDENTITY_MAP
           p "MISS!", className, ref.description
