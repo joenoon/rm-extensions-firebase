@@ -721,21 +721,23 @@ module FirebaseExt
       if @models.any?
         _models = @models.dup
         _pairs = []
+        i = 0
         while _models.size > 0
+          ii = i # strange: proc doesnt seem to close over i correctly
           model = _models.shift
           blk = proc do
-            # p "COMPLETE!"
+            # p "COMPLETE!", ii, model
             @complete_blocks.delete(model)
-            index = @models.index(model)
-            @ready_models[index] = model
+            @ready_models[ii] = model
             @ready_count += 1
             @pending_count -= 1
-            if @complete_blocks.empty?
+            if @pending_count == 0
               ready!
             end
           end
           @complete_blocks[model] = blk
           _pairs << [ model, blk ]
+          i += 1
         end
         while pair = _pairs.shift
           pair[0].once(&pair[1])
@@ -751,7 +753,9 @@ module FirebaseExt
 
     def ready!
       @ready = true
-      rmext_trigger(:ready, ready_models)
+      # p "models", models.dup
+      # p "ready_models", ready_models.dup
+      rmext_trigger(:ready, ready_models.dup)
       clear_cycle!
     end
 
@@ -773,7 +777,7 @@ module FirebaseExt
 
     def once(&block)
       if ready?
-        rmext_block_on_main_q(block, ready_models)
+        rmext_block_on_main_q(block, ready_models.dup)
       else
         @waiting_once << [ self, block.owner ]
         rmext_once(:ready, &block)
@@ -816,10 +820,11 @@ module FirebaseExt
 
     # public, completes with ready transformations
     def transformed(&block)
-      if (snap = transformations.first) && snap.is_a?(Model)
-        FirebaseExt::Batch.new(transformations).once(&block)
+      items = transformations.dup
+      if (snap = items.first) && snap.is_a?(Model)
+        FirebaseExt::Batch.new(items).once(&block)
       else
-        rmext_block_on_main_q(block, transformations.dup)
+        rmext_block_on_main_q(block, items)
       end
       self
     end
@@ -1068,7 +1073,7 @@ module FirebaseExt
 
     # this is the method you should call
     def self.get(ref)
-      if existing = identity_map[ref.description]
+      if ref && existing = identity_map[[ className, ref.description ]]
         if DEBUG_IDENTITY_MAP
           p "HIT!", className, ref.description, existing.retainCount
         end
@@ -1078,7 +1083,9 @@ module FirebaseExt
           p "MISS!", className, ref.description
         end
         res = new(ref)
-        identity_map[ref.description] ||= res
+        if ref
+          identity_map[[ className, ref.description ]] ||= res
+        end
         res
       end
     end
