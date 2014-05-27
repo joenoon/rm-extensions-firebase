@@ -18,6 +18,45 @@ class Firebase
   def ending_at(priority)
     queryEndingAtPriority(priority)
   end
+
+  def rmext_arrayToHash(array)
+    hash = {}
+    array.each_with_index do |item, i|
+      hash[i.to_s] = item
+    end
+    hash
+  end
+
+  def rmext_castValue(value, key=nil)
+    if value.nil? || value == true || value == false || value.is_a?(NSString) || value.is_a?(NSNumber)
+      # good
+    elsif value.is_a?(Array)
+      value = rmext_arrayToHash(value)
+      p "FIREBASE_BAD_TYPE FIXED ARRAY: #{File.join(*[ description, key ].compact.map(&:to_s))}: #{value.inspect} (type: #{value.className.to_s})", "!"
+    elsif value.is_a?(NSDictionary)
+      value.keys.each do |k|
+        value[k] = rmext_castValue(value[k], k)
+      end
+    else
+      p "FIREBASE_BAD_TYPE FATAL: #{File.join(*[ description, key ].compact.map(&:to_s))}: #{value.inspect} (type: #{value.className.to_s})", "!"
+    end
+    # always return the value, corrected or not
+    value
+  end
+
+  def rmext_setValue(value, andPriority:priority)
+    value = rmext_castValue(value)
+    setValue(value, andPriority:priority)
+  end
+  def rmext_setValue(value)
+    value = rmext_castValue(value)
+    setValue(value)
+  end
+  def rmext_onDisconnectSetValue(value)
+    value = rmext_castValue(value)
+    onDisconnectSetValue(value)
+  end
+
 end
 
 class FQuery
