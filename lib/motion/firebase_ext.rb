@@ -1,4 +1,7 @@
 class Firebase
+
+  DEBUG_SETVALUE = RMExtensions::Env['rmext_firebase_debug_setvalue'] == '1'
+
   def [](*names)
     if names.length == 0
       childByAutoId
@@ -28,15 +31,20 @@ class Firebase
   end
 
   def rmext_castValue(value, key=nil)
-    if value.nil? || value == true || value == false || value.is_a?(NSString) || value.is_a?(NSNumber)
+    if value == true || value == false || value.is_a?(NSString) || value.is_a?(NSNumber)
       # good
+    elsif value.nil?
+      p "FIREBASE_BAD_TYPE FIXED NIL: #{File.join(*[ description, key ].compact.map(&:to_s))}", "!"
+      value = {}
     elsif value.is_a?(Array)
       value = rmext_arrayToHash(value)
       p "FIREBASE_BAD_TYPE FIXED ARRAY: #{File.join(*[ description, key ].compact.map(&:to_s))}: #{value.inspect} (type: #{value.className.to_s})", "!"
     elsif value.is_a?(NSDictionary)
+      new_value = {}
       value.keys.each do |k|
-        value[k] = rmext_castValue(value[k], k)
+        new_value[k.to_s] = rmext_castValue(value[k], k)
       end
+      value = new_value
     else
       p "FIREBASE_BAD_TYPE FATAL: #{File.join(*[ description, key ].compact.map(&:to_s))}: #{value.inspect} (type: #{value.className.to_s})", "!"
     end
@@ -45,16 +53,34 @@ class Firebase
   end
 
   def rmext_setValue(value, andPriority:priority)
-    value = rmext_castValue(value)
+    # value = rmext_castValue(value)
     setValue(value, andPriority:priority)
   end
   def rmext_setValue(value)
-    value = rmext_castValue(value)
+    # value = rmext_castValue(value)
     setValue(value)
   end
   def rmext_onDisconnectSetValue(value)
     value = rmext_castValue(value)
     onDisconnectSetValue(value)
+  end
+
+  alias_method 'orig_setValue', 'setValue'
+  alias_method 'orig_setValueAndPriority', 'setValue:andPriority'
+
+  def setValue(value, andPriority:priority)
+    if DEBUG_SETVALUE
+      p description, "setValue:andPriority", value, priority
+    end
+    value = rmext_castValue(value)
+    orig_setValueAndPriority(value, priority)
+  end
+  def setValue(value)
+    if DEBUG_SETVALUE
+      p description, "setValue:", value
+    end
+    value = rmext_castValue(value)
+    orig_setValue(value)
   end
 
 end
@@ -687,7 +713,7 @@ module FirebaseExt
     def initialize(*models)
       @waiting_once = []
       @ready = false
-      @models = models.flatten.compact
+      @models = models.flatten.compact.dup
       @ready_models = []
       @ready_count = 0
       @pending_count = @models.size
@@ -793,7 +819,7 @@ module FirebaseExt
       if (snap = transformations.first) && snap.is_a?(Model)
         FirebaseExt::Batch.new(transformations).once(&block)
       else
-        rmext_block_on_main_q(block, transformations)
+        rmext_block_on_main_q(block, transformations.dup)
       end
       self
     end
