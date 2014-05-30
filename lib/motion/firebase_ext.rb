@@ -277,8 +277,34 @@ end
 
 module FirebaseExt
 
+  QUEUE = Dispatch::Queue.new("FirebaseExt")
+
   DEBUG_IDENTITY_MAP = RMExtensions::Env['rmext_firebase_debug_identity_map'] == '1'
   DEBUG_MODEL_DEALLOC = RMExtensions::Env['rmext_firebase_debug_model_dealloc'] == '1'
+  DEBUG_FIREBASE_TIMING = RMExtensions::Env['rmext_firebase_debug_timing'] == '1'
+
+  def self.queue_for(queueish)
+    if queueish == :main || queueish.nil?
+      Dispatch::Queue.main
+    elsif queueish == :async
+      QUEUE
+    else
+      queueish
+    end
+  end
+
+  def self.block_on_queue(queue, block, *args)
+    queue = queue_for(queue)
+    unless block.nil?
+      if NSThread.currentThread.isMainThread && queue == Dispatch::Queue.main
+        block.call(*args)
+      else
+        queue.barrier_async do
+          block.call(*args)
+        end
+      end
+    end
+  end
 
   class DataSnapshot
 
@@ -340,7 +366,9 @@ module FirebaseExt
     rmext_weak_attr_accessor :callback_owner
 
     def rmext_dealloc
-      stop!
+      if ref && handle
+        ref.off(handle)
+      end
       super
     end
 
@@ -353,6 +381,7 @@ module FirebaseExt
     end
 
     def start!
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       weak_self = WeakRef.new(self)
       cancel_block = lambda do |err|
         if weak_self.weakref_alive?
@@ -362,22 +391,25 @@ module FirebaseExt
         end
       end
       @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
-        @snapshot = snap
-        if value_required && !snap.hasValue?
-          cancel_block.call(NSError.errorWithDomain("requirement failure", code:0, userInfo:{
-            :error => "requirement_failure"
-          }))
-        else
-          callback.call(snap) if callback && callback_owner
-          @ready = true
-          rmext_trigger(:ready, self)
-          rmext_trigger(:finished, self)
-          # p "ready__"
+        QUEUE.barrier_async do
+          @snapshot = snap
+          if value_required && !snap.hasValue?
+            cancel_block.call(NSError.errorWithDomain("requirement failure", code:0, userInfo:{
+              :error => "requirement_failure"
+            }))
+          else
+            callback.call(snap) if callback && callback_owner
+            @ready = true
+            rmext_trigger(:ready, self)
+            rmext_trigger(:finished, self)
+            # p "ready__"
+          end
         end
       end
     end
 
     def stop!
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @cancelled = false
       @ready = false
       if ref && handle
@@ -414,15 +446,17 @@ module FirebaseExt
     attr_accessor :watches
 
     def clear!
-      @cancelled = false
-      @ready = false
-      keys = @watches.keys.dup
-      while keys.size > 0
-        name = keys.shift
-        watch = @watches[name]
-        watch.stop!
+      QUEUE.barrier_async do
+        @cancelled = false
+        @ready = false
+        keys = @watches.keys.dup
+        while keys.size > 0
+          name = keys.shift
+          watch = @watches[name]
+          watch.stop!
+        end
+        @watches.clear
       end
-      @watches.clear
       self
     end
 
@@ -439,22 +473,28 @@ module FirebaseExt
     end
 
     def ready!
-      @ready = true
-      rmext_trigger(:ready, self)
-      rmext_trigger(:finished, self)
+      QUEUE.barrier_async do
+        @ready = true
+        rmext_trigger(:ready, self)
+        rmext_trigger(:finished, self)
+      end
     end
 
     def cancelled!
-      @cancelled = true
-      rmext_trigger(:cancelled, self)
-      rmext_trigger(:finished, self)
+      QUEUE.barrier_async do
+        @cancelled = true
+        rmext_trigger(:cancelled, self)
+        rmext_trigger(:finished, self)
+      end
     end
 
     def stub(name)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @watches[name] ||= Listener.new
     end
 
     def watch(name, ref, opts={}, &block)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       data = Listener.new
       data.ref = ref
       if opts[:required]
@@ -472,7 +512,8 @@ module FirebaseExt
         current.rmext_off(:finished, self)
       end
       @watches[name] = data
-      data.rmext_on(:finished) do
+      data.rmext_on(:finished, :queue => QUEUE) do
+        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
         readies = 0
         cancelled = 0
         size = @watches.size
@@ -522,7 +563,9 @@ module FirebaseExt
       @dependencies_cancelled = {}
       @dependencies_ready = {}
       @waiting_once = []
-      internal_setup
+      QUEUE.barrier_async do
+        internal_setup
+      end
     end
 
     def dealloc
@@ -545,21 +588,27 @@ module FirebaseExt
     end
 
     def clear_cycle!
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @waiting_once = []
     end
 
     def ready!
-      @ready = true
-      rmext_trigger(:ready, self)
-      rmext_trigger(:finished, self)
-      clear_cycle!
+      QUEUE.barrier_async do
+        # p "ready!"
+        @ready = true
+        rmext_trigger(:ready, self)
+        rmext_trigger(:finished, self)
+        clear_cycle!
+      end
     end
 
     def cancelled!
-      @cancelled = true
-      rmext_trigger(:cancelled, self)
-      rmext_trigger(:finished, self)
-      clear_cycle!
+      QUEUE.barrier_async do
+        @cancelled = true
+        rmext_trigger(:cancelled, self)
+        rmext_trigger(:finished, self)
+        clear_cycle!
+      end
     end
 
     # override
@@ -567,14 +616,17 @@ module FirebaseExt
     end
 
     def internal_setup
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @api = Coordinator.new
-      @api.rmext_on(:finished) do
+      @api.rmext_on(:finished, :queue => QUEUE) do
+        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
         check_ready
       end
       setup
     end
 
     def check_ready
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       # p "check_ready cancelled?", @api.cancelled?, @dependencies_cancelled.size
       # p "check_ready ready?", @api.ready?, @dependencies_ready.size, @dependencies.size
       if @api.cancelled? || @dependencies_cancelled.size > 0
@@ -585,6 +637,7 @@ module FirebaseExt
     end
 
     def watch(name, ref, opts={}, &block)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       rmext_ivar(name, @api.watch(name, ref, opts, &block))
     end
 
@@ -603,16 +656,19 @@ module FirebaseExt
     # book.attr("name") #=> "My Book"
     # book.author.attr("name") #=> "Joe Noon"
     def depend(name, model)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @dependencies[name] = model
       rmext_ivar(name, model)
       track_dependency_state(model)
-      model.rmext_on(:finished) do |_model|
+      model.rmext_on(:finished, :queue => QUEUE) do |_model|
+        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
         track_dependency_state(_model)
         check_ready
       end
     end
 
     def track_dependency_state(model)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       if model.ready?
         @dependencies_ready[model] = true
         @dependencies_cancelled.delete(model)
@@ -622,14 +678,26 @@ module FirebaseExt
       end
     end
 
-    def always(&block)
+    def always_async(&block)
+      always(:async, &block)
+    end
+
+    def always(queue=nil, &block)
       return false if cancelled?
+      start_time = if DEBUG_FIREBASE_TIMING
+        Time.now
+      end
       if ready?
-        rmext_block_on_main_q(block, self)
+        FirebaseExt.block_on_queue(queue, block, self)
       end
       # return an unbinder
       block.weak!
-      rmext_on(:ready, &block)
+      rmext_on(:ready, :queue => queue, &block)
+      if DEBUG_FIREBASE_TIMING
+        rmext_on(:ready, :queue => queue) do
+          p "ALWAYS #{rmext_object_desc}: #{Time.now - start_time}"
+        end
+      end
       weak_block_owner = WeakRef.new(block.owner)
       weak_self = WeakRef.new(self)
       unbinder = proc do
@@ -637,16 +705,18 @@ module FirebaseExt
           rmext_off(:ready, &block)
         end
       end
-      rmext_once(:cancelled, &unbinder)
+      rmext_once(:cancelled, :queue => queue, &unbinder)
       unbinder
     end
 
-    def once(&block)
+    def once(queue=nil, &block)
       if ready? || cancelled?
-        rmext_block_on_main_q(block, self)
+        FirebaseExt.block_on_queue(queue, block, self)
       else
-        @waiting_once << [ self, block.owner ]
-        rmext_once(:finished, &block)
+        QUEUE.barrier_async do
+          @waiting_once << [ self, block.owner ]
+        end
+        rmext_once(:finished, :queue => queue, &block)
       end
       self
     end
@@ -726,6 +796,7 @@ module FirebaseExt
           ii = i # strange: proc doesnt seem to close over i correctly
           model = _models.shift
           blk = proc do
+            rmext_require_queue!(QUEUE, __FILE__, __LINE__)
             # p "COMPLETE!", ii, model
             @complete_blocks.delete(model)
             @ready_models[ii] = model
@@ -739,48 +810,67 @@ module FirebaseExt
           _pairs << [ model, blk ]
           i += 1
         end
-        while pair = _pairs.shift
-          pair[0].once(&pair[1])
+        QUEUE.barrier_async do
+          while pair = _pairs.shift
+            pair[0].once(QUEUE, &pair[1])
+          end
         end
       else
-        ready!
+        QUEUE.barrier_async do
+          ready!
+        end
       end
     end
 
     def clear_cycle!
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @waiting_once = []
     end
 
     def ready!
-      @ready = true
-      # p "models", models.dup
-      # p "ready_models", ready_models.dup
-      rmext_trigger(:ready, ready_models.dup)
-      clear_cycle!
+      QUEUE.barrier_async do
+        @ready = true
+        # p "models", models.dup
+        # p "ready_models", ready_models.dup
+        rmext_trigger(:ready, ready_models.dup)
+        clear_cycle!
+      end
     end
 
     def cancel!
-      models_outstanding = @complete_blocks.keys.dup
-      while models_outstanding.size > 0
-        model = models_outstanding.shift
-        if blk = @complete_blocks[model]
-          @complete_blocks.delete(model)
-          model.cancel_block(&blk)
+      QUEUE.barrier_async do
+        models_outstanding = @complete_blocks.keys.dup
+        while models_outstanding.size > 0
+          model = models_outstanding.shift
+          if blk = @complete_blocks[model]
+            @complete_blocks.delete(model)
+            model.cancel_block(&blk)
+          end
         end
+        clear_cycle!
       end
-      clear_cycle!
     end
 
     def ready?
       !!@ready
     end
 
-    def once(&block)
+    def once(queue=nil, &block)
+      start_time = if DEBUG_FIREBASE_TIMING
+        Time.now
+      end
       if ready?
-        rmext_block_on_main_q(block, ready_models.dup)
+        FirebaseExt.block_on_queue(queue, block, ready_models.dup)
       else
-        @waiting_once << [ self, block.owner ]
-        rmext_once(:ready, &block)
+        QUEUE.barrier_async do
+          @waiting_once << [ self, block.owner ]
+        end
+        rmext_once(:ready, :queue => queue, &block)
+        if DEBUG_FIREBASE_TIMING
+          rmext_once(:ready, :queue => queue) do |_models|
+            p "BATCH ONCE #{_models.size} like `#{_models.first.rmext_object_desc}`: #{Time.now - start_time}"
+          end
+        end
       end
       self
     end
@@ -818,40 +908,62 @@ module FirebaseExt
       end
     end
 
+    def transformed_async(&block)
+      transformed(:async, &block)
+    end
+
     # public, completes with ready transformations
-    def transformed(&block)
+    def transformed(queue=nil, &block)
       items = transformations.dup
       if (snap = items.first) && snap.is_a?(Model)
-        FirebaseExt::Batch.new(items).once(&block)
+        FirebaseExt::Batch.new(items).once(queue, &block)
       else
-        rmext_block_on_main_q(block, items)
+        FirebaseExt.block_on_queue(queue, block, items)
       end
       self
     end
 
+    def once_async(&block)
+      once(:async, &block)
+    end
+
     # completes with `self` once, when the collection is ready.
     # retains `self` and the sender until complete
-    def once(&block)
+    def once(queue=nil, &block)
       if ready?
-        rmext_block_on_main_q(block, self)
+        FirebaseExt.block_on_queue(queue, block, self)
       else
-        @waiting_once << [ self, block.owner ]
-        rmext_once(:ready, &block)
+        QUEUE.barrier_async do
+          @waiting_once << [ self, block.owner ]
+        end
+        rmext_once(:ready, :queue => queue, &block)
       end
       self
+    end
+
+    def always_async(&block)
+      always(:async, &block)
     end
 
     # completes with `self` immediately if ready, and every time the collection :ready fires.
     # does not retain `self` or the sender.
     # returns an "unbinder" that can be called to stop listening.
-    def always(&block)
+    def always(queue=nil, &block)
       return false if cancelled?
+      start_time = if DEBUG_FIREBASE_TIMING
+        Time.now
+      end
       if ready?
-        rmext_block_on_main_q(block, self)
+        FirebaseExt.block_on_queue(queue, block, self)
       end
       # return an unbinder
       block.weak!
-      rmext_on(:ready, &block)
+      rmext_on(:ready, :queue => queue, &block)
+      if DEBUG_FIREBASE_TIMING
+        rmext_on(:ready, :queue => queue) do
+          p "ALWAYS #{rmext_object_desc} #{ref.description}: #{Time.now - start_time}"
+        end
+      end
       weak_block_owner = WeakRef.new(block.owner)
       weak_self = WeakRef.new(self)
       unbinder = proc do
@@ -859,18 +971,18 @@ module FirebaseExt
           rmext_off(:ready, &block)
         end
       end
-      rmext_once(:cancelled, &unbinder)
+      rmext_once(:cancelled, :queue => queue, &unbinder)
       unbinder
     end
 
     # completes with `self` every time the collection :changed fires.
     # does not retain `self` or the sender.
     # returns an "unbinder" that can be called to stop listening.
-    def changed(&block)
+    def changed(queue=nil, &block)
       return false if cancelled?
       # return an unbinder
       block.weak!
-      rmext_on(:changed, &block)
+      rmext_on(:changed, :queue => queue, &block)
       weak_block_owner = WeakRef.new(block.owner)
       weak_self = WeakRef.new(self)
       unbinder = proc do
@@ -878,18 +990,18 @@ module FirebaseExt
           rmext_off(:changed, &block)
         end
       end
-      rmext_once(:cancelled, &unbinder)
+      rmext_once(:cancelled, :queue => queue, &unbinder)
       unbinder
     end
 
     # completes with `self`, `snap`, `prev` every time the collection :added fires.
     # does not retain `self` or the sender.
     # returns an "unbinder" that can be called to stop listening.
-    def added(&block)
+    def added(queue=nil, &block)
       return false if cancelled?
       # return an unbinder
       block.weak!
-      rmext_on(:added, &block)
+      rmext_on(:added, :queue => queue, &block)
       weak_block_owner = WeakRef.new(block.owner)
       weak_self = WeakRef.new(self)
       unbinder = proc do
@@ -897,18 +1009,18 @@ module FirebaseExt
           rmext_off(:added, &block)
         end
       end
-      rmext_once(:cancelled, &unbinder)
+      rmext_once(:cancelled, :queue => queue, &unbinder)
       unbinder
     end
 
     # completes with `self`, `snap` every time the collection :removed fires.
     # does not retain `self` or the sender.
     # returns an "unbinder" that can be called to stop listening.
-    def removed(&block)
+    def removed(queue=nil, &block)
       return false if cancelled?
       # return an unbinder
       block.weak!
-      rmext_on(:removed, &block)
+      rmext_on(:removed, :queue => queue, &block)
       weak_block_owner = WeakRef.new(block.owner)
       weak_self = WeakRef.new(self)
       unbinder = proc do
@@ -916,18 +1028,18 @@ module FirebaseExt
           rmext_off(:removed, &block)
         end
       end
-      rmext_once(:cancelled, &unbinder)
+      rmext_once(:cancelled, :queue => queue, &unbinder)
       unbinder
     end
 
     # completes with `self`, `snap`, `prev` every time the collection :moved fires.
     # does not retain `self` or the sender.
     # returns an "unbinder" that can be called to stop listening.
-    def moved(&block)
+    def moved(queue=nil, &block)
       return false if cancelled?
       # return an unbinder
       block.weak!
-      rmext_on(:moved, &block)
+      rmext_on(:moved, :queue => queue, &block)
       weak_block_owner = WeakRef.new(block.owner)
       weak_self = WeakRef.new(self)
       unbinder = proc do
@@ -935,7 +1047,7 @@ module FirebaseExt
           rmext_off(:moved, &block)
         end
       end
-      rmext_once(:cancelled, &unbinder)
+      rmext_once(:cancelled, :queue => queue, &unbinder)
       unbinder
     end
 
@@ -946,11 +1058,14 @@ module FirebaseExt
       @snaps_by_name = {}
       @transformations = []
       @transformations_table = {}
-      setup_ref(ref)
+      QUEUE.barrier_async do
+        setup_ref(ref)
+      end
     end
 
     # internal
     def setup_ref(ref)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @ready = false
       @cancelled = false
       weak_self = WeakRef.new(self)
@@ -961,38 +1076,53 @@ module FirebaseExt
         end
       end
       ref.on(:added) do |snap, prev|
-        add(snap, prev)
+        # p "NORMAL ", snap.name, prev
+        QUEUE.barrier_async do
+          # p "BARRIER", snap.name, prev
+          add(snap, prev)
+        end
       end
       ref.on(:removed) do |snap|
-        remove(snap)
+        QUEUE.barrier_async do
+          remove(snap)
+        end
       end
       ref.on(:moved) do |snap, prev|
-        add(snap, prev)
+        QUEUE.barrier_async do
+          add(snap, prev)
+        end
       end
       ref.once(:value, { :disconnect => cancel_block }) do |collection|
-        ready!
+        QUEUE.barrier_async do
+          ready!
+        end
       end
       @ref = ref
     end
 
     # internal
     def clear_cycle!
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @waiting_once = []
     end
 
     # internal
     def ready!
-      @ready = true
-      rmext_trigger(:ready, self)
-      rmext_trigger(:changed, self)
-      clear_cycle!
+      QUEUE.barrier_async do
+        @ready = true
+        rmext_trigger(:ready, self)
+        rmext_trigger(:changed, self)
+        clear_cycle!
+      end
     end
 
     # internal
     def cancelled!
-      @cancelled = true
-      rmext_trigger(:cancelled, self)
-      clear_cycle!
+      QUEUE.barrier_async do
+        @cancelled = true
+        rmext_trigger(:cancelled, self)
+        clear_cycle!
+      end
     end
 
     # internal, allows the user to pass a block for transformations instead of subclassing
@@ -1009,11 +1139,13 @@ module FirebaseExt
 
     # internal
     def store_transform(snap)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       @transformations_table[snap] ||= transform(snap)
     end
 
     # internal
     def add(snap, prev)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
       moved = false
 
       if current_index = @snaps_by_name[snap.name]
