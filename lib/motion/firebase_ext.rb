@@ -111,81 +111,6 @@ class FQuery
     queryEndingAtPriority(priority)
   end
 
-  class Holder
-    
-    include ::RMExtensions::CommonMethods
-
-    attr_accessor :map
-    
-    def initialize
-      @map = ::RMExtensions::WeakToStrongHash.new
-      @own = ::RMExtensions::WeakToStrongHash.new
-    end
-
-    def own_snapshot(snap)
-      @own[snap.ref] = snap
-      return
-    end
-
-    def track(fquery, handler, leaf)
-      @map[leaf] ||= {}
-      @map[leaf][handler] = fquery
-      return
-    end
-
-    def off(handle=nil, cleanup_only=false)
-      object_context = !handle.is_a?(Integer) && handle
-      handle = nil if object_context
-      keys = [] + @map.keys
-      while keys.size > 0
-        other = keys.shift
-        # p "other", other.rmext_object_desc
-        next if object_context && other != object_context
-        if hash = @map[other]
-          hash_keys = [] + hash.keys
-          while hash_keys.size > 0
-            handler = hash_keys.shift
-            if !handle || handler == handle
-              fquery = hash[handler]
-              @own.delete(fquery)
-              hash.delete(handler)
-              unless cleanup_only
-                # p fquery.description, "removeObserverWithHandle", handler #, caller
-                fquery.removeObserverWithHandle(handler)
-              end
-              other_handlers = other.instance_variable_get("@_firebase_handlers")
-              other_handlers.off(handler, true)
-            end
-          end
-        end
-      end
-      nil
-    end
-    def rmext_dealloc
-      off
-      super
-    end
-  end
-
-  def ensure_firebase_handlers(object)
-    unless _firebase_handlers = object.instance_variable_get("@_firebase_handlers")
-      _firebase_handlers = object.instance_variable_set("@_firebase_handlers", Holder.new)
-    end
-    _firebase_handlers
-  end
-
-  def own_snapshot(object, snap)
-    _firebase_handlers = ensure_firebase_handlers(object)
-    _firebase_handlers.own_snapshot(snap)
-    nil
-  end
-
-  def track_handler(object, handler, leaf)
-    _firebase_handlers = ensure_firebase_handlers(object)
-    _firebase_handlers.track(self, handler, leaf)
-    nil
-  end
-
   def on(_event_type, options={}, &and_then)
     and_then = (and_then || options[:completion]).weak!
     raise "event handler is required" unless and_then
@@ -203,7 +128,6 @@ class FQuery
       wrapped_block = lambda do |snap|
         if weak_owner.weakref_alive?
           datasnap = FirebaseExt::DataSnapshot.new(snap)
-          own_snapshot(weak_owner, datasnap)
           and_then.call(datasnap)
         end
       end.weak!
@@ -243,30 +167,55 @@ class FQuery
         end
       end
     end
-    unless options[:once]
-      track_handler(owner, handler, self)
-      track_handler(self, handler, owner)
-      handler
-    end
+    # unless options[:once]
+    #   @_outstanding_handlers ||= OutstandingHandlers.new(self)
+    #   @_outstanding_handlers << handler
+    # end
+    handler
   end
+
+  # class OutstandingHandlers
+
+  #   def initialize(scope)
+  #     @scope = WeakRef.new(scope)
+  #     @handlers = []
+  #   end
+
+  #   def <<(handler)
+  #     @handlers << handler
+  #   end
+
+  #   def handlers
+  #     @handlers
+  #   end
+
+  #   def off(handle=nil)
+  #     if @scope.weakref_alive?
+  #       if handle
+  #         @scope.removeObserverWithHandle(handle)
+  #       else
+  #         _handlers = @handlers.dup
+  #         while _handlers.size > 0
+  #           _handle = _handlers.shift
+  #           off(_handle)
+  #         end
+  #       end
+  #     end
+  #   end
+
+  #   def dealloc
+  #     off
+  #     super
+  #   end
+  # end
 
   def once(event_type, options={}, &and_then)
     on(event_type, options.merge(:once => true), &and_then)
   end
 
-  def off(handle=nil)
-    if @_firebase_handlers
-      @_firebase_handlers.off(handle)
-    else
-      @_firebase_handlers.off
-    end
-    return self
-  end
-
-  def self.off_context(owner, handle=nil)
-    if _firebase_handlers = owner.instance_variable_get("@_firebase_handlers")
-      _firebase_handlers.off(handle)
-    end
+  def off(handle)
+    removeObserverWithHandle(handle)
+    self
   end
 
   def description
@@ -369,7 +318,6 @@ module FirebaseExt
       if ref && handle
         ref.off(handle)
       end
-      super
     end
 
     def ready?
@@ -381,7 +329,7 @@ module FirebaseExt
     end
 
     def start!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       weak_self = WeakRef.new(self)
       cancel_block = lambda do |err|
         if weak_self.weakref_alive?
@@ -409,7 +357,7 @@ module FirebaseExt
     end
 
     def stop!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @cancelled = false
       @ready = false
       if ref && handle
@@ -489,12 +437,12 @@ module FirebaseExt
     end
 
     def stub(name)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @watches[name] ||= Listener.new
     end
 
     def watch(name, ref, opts={}, &block)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       data = Listener.new
       data.ref = ref
       if opts[:required]
@@ -513,7 +461,7 @@ module FirebaseExt
       end
       @watches[name] = data
       data.rmext_on(:finished, :queue => QUEUE) do
-        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+        rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
         readies = 0
         cancelled = 0
         size = @watches.size
@@ -588,7 +536,7 @@ module FirebaseExt
     end
 
     def clear_cycle!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @waiting_once = []
     end
 
@@ -616,17 +564,17 @@ module FirebaseExt
     end
 
     def internal_setup
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @api = Coordinator.new
       @api.rmext_on(:finished, :queue => QUEUE) do
-        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+        rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
         check_ready
       end
       setup
     end
 
     def check_ready
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       # p "check_ready cancelled?", @api.cancelled?, @dependencies_cancelled.size
       # p "check_ready ready?", @api.ready?, @dependencies_ready.size, @dependencies.size
       if @api.cancelled? || @dependencies_cancelled.size > 0
@@ -637,7 +585,7 @@ module FirebaseExt
     end
 
     def watch(name, ref, opts={}, &block)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       rmext_ivar(name, @api.watch(name, ref, opts, &block))
     end
 
@@ -656,19 +604,19 @@ module FirebaseExt
     # book.attr("name") #=> "My Book"
     # book.author.attr("name") #=> "Joe Noon"
     def depend(name, model)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @dependencies[name] = model
       rmext_ivar(name, model)
       track_dependency_state(model)
       model.rmext_on(:finished, :queue => QUEUE) do |_model|
-        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+        rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
         track_dependency_state(_model)
         check_ready
       end
     end
 
     def track_dependency_state(model)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       if model.ready?
         @dependencies_ready[model] = true
         @dependencies_cancelled.delete(model)
@@ -796,7 +744,7 @@ module FirebaseExt
           ii = i # strange: proc doesnt seem to close over i correctly
           model = _models.shift
           blk = proc do
-            rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+            rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
             # p "COMPLETE!", ii, model
             @complete_blocks.delete(model)
             @ready_models[ii] = model
@@ -823,7 +771,7 @@ module FirebaseExt
     end
 
     def clear_cycle!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @waiting_once = []
     end
 
@@ -1065,7 +1013,7 @@ module FirebaseExt
 
     # internal
     def setup_ref(ref)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @ready = false
       @cancelled = false
       weak_self = WeakRef.new(self)
@@ -1102,7 +1050,7 @@ module FirebaseExt
 
     # internal
     def clear_cycle!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @waiting_once = []
     end
 
@@ -1139,13 +1087,13 @@ module FirebaseExt
 
     # internal
     def store_transform(snap)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @transformations_table[snap] ||= transform(snap)
     end
 
     # internal
     def add(snap, prev)
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       moved = false
 
       if current_index = @snaps_by_name[snap.name]
