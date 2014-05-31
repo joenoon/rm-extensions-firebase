@@ -1096,6 +1096,11 @@ module FirebaseExt
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       moved = false
 
+      unless @snaps_by_name
+        # try to catch a bug
+        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
+      end
+
       if current_index = @snaps_by_name[snap.name]
         if current_index == 0 && prev.nil?
           return
