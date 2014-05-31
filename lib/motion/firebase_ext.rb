@@ -1217,7 +1217,8 @@ module FirebaseExt
         unless @data.ready?
           raise "#{className} tried to use a model that is not ready: #{@data.inspect}"
         end
-        @data_unbinder = @data.always do
+        @data_unbinder = @data.always do |m|
+          next unless m == @data
           changed
         end
       end
@@ -1260,7 +1261,8 @@ module FirebaseExt
         unless @model.ready?
           raise "#{className} tried to use a model that is not ready: #{@model.rmext_object_desc}"
         end
-        @model_unbinder = @model.always do
+        @model_unbinder = @model.always do |m|
+          next unless m == @model
           changed
         end
       end
@@ -1302,7 +1304,8 @@ module FirebaseExt
         unless @model.ready?
           raise "#{className} tried to use a model that is not ready: #{@model.inspect}"
         end
-        @model_unbinder = @model.always do
+        @model_unbinder = @model.always do |m|
+          next unless m == @model
           if isViewLoaded
             changed
           else
