@@ -167,54 +167,57 @@ class FQuery
         end
       end
     end
-    # unless options[:once]
-    #   @_outstanding_handlers ||= OutstandingHandlers.new(self)
-    #   @_outstanding_handlers << handler
-    # end
+    unless options[:once]
+      @_outstanding_handlers ||= OutstandingHandlers.new(self)
+      @_outstanding_handlers << handler
+    end
     handler
   end
 
-  # class OutstandingHandlers
+  class OutstandingHandlers
 
-  #   def initialize(scope)
-  #     @scope = WeakRef.new(scope)
-  #     @handlers = []
-  #   end
+    def initialize(scope)
+      @scope = WeakRef.new(scope)
+      @handlers = []
+    end
 
-  #   def <<(handler)
-  #     @handlers << handler
-  #   end
+    def <<(handler)
+      @handlers << handler
+    end
 
-  #   def handlers
-  #     @handlers
-  #   end
+    def handlers
+      @handlers
+    end
 
-  #   def off(handle=nil)
-  #     if @scope.weakref_alive?
-  #       if handle
-  #         @scope.removeObserverWithHandle(handle)
-  #       else
-  #         _handlers = @handlers.dup
-  #         while _handlers.size > 0
-  #           _handle = _handlers.shift
-  #           off(_handle)
-  #         end
-  #       end
-  #     end
-  #   end
+    def off(handle=nil)
+      if @scope.weakref_alive?
+        if _handle = @handlers.delete(handle)
+          p "remove handle", _handle
+          @scope.removeObserverWithHandle(_handle)
+        else
+          _handlers = @handlers.dup
+          while _handlers.size > 0
+            _handle = _handlers.shift
+            off(_handle)
+          end
+        end
+      end
+    end
 
-  #   def dealloc
-  #     off
-  #     super
-  #   end
-  # end
+    def dealloc
+      off
+      super
+    end
+  end
 
   def once(event_type, options={}, &and_then)
     on(event_type, options.merge(:once => true), &and_then)
   end
 
   def off(handle)
-    removeObserverWithHandle(handle)
+    if @_outstanding_handlers
+      @_outstanding_handlers.off(handle)
+    end
     self
   end
 
@@ -1058,6 +1061,7 @@ module FirebaseExt
     # internal
     def setup_ref(ref)
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
+      _clear_current_ref!
       @ready = false
       @cancelled = false
       weak_self = WeakRef.new(self)
@@ -1067,30 +1071,62 @@ module FirebaseExt
           cancelled!
         end
       end
-      ref.on(:added) do |snap, prev|
+      @added_handler = ref.on(:added) do |snap, prev|
         # p "NORMAL ", snap.name, prev
         QUEUE.barrier_async do
           # p "BARRIER", snap.name, prev
           add(snap, prev)
         end
       end
-      ref.on(:removed) do |snap|
+      @removed_handler = ref.on(:removed) do |snap|
         QUEUE.barrier_async do
           remove(snap)
         end
       end
-      ref.on(:moved) do |snap, prev|
+      @moved_handler = ref.on(:moved) do |snap, prev|
         QUEUE.barrier_async do
           add(snap, prev)
         end
       end
-      ref.once(:value, { :disconnect => cancel_block }) do |collection|
+      @value_handler = ref.once(:value, { :disconnect => cancel_block }) do |collection|
+        @value_handler = nil
         QUEUE.barrier_async do
           ready!
         end
       end
       @ref = ref
     end
+
+    def rmext_dealloc
+      _clear_current_ref!
+    end
+
+    def _clear_current_ref!
+      if @ref
+        if @added_handler
+          @ref.off(@added_handler)
+          @added_handler = nil
+          p "removed added_handler"
+        end
+        if @removed_handler
+          @ref.off(@removed_handler)
+          @removed_handler = nil
+          p "removed removed_handler"
+        end
+        if @moved_handler
+          @ref.off(@moved_handler)
+          @moved_handler = nil
+          p "removed moved_handler"
+        end
+        if @value_handler
+          @ref.off(@value_handler)
+          @value_handler = nil
+          p "removed value_handler"
+        end
+        @ref = nil
+      end
+    end
+
 
     # internal
     def clear_cycle!
