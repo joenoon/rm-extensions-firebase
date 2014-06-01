@@ -391,25 +391,23 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :watches
+    def watches
+      @watches ||= {}
+    end
 
     def clear!
       QUEUE.barrier_async do
         @cancelled = false
         @ready = false
-        keys = @watches.keys.dup
+        keys = watches.keys.dup
         while keys.size > 0
           name = keys.shift
-          watch = @watches[name]
+          watch = watches[name]
           watch.stop!
         end
-        @watches.clear
+        watches.clear
       end
       self
-    end
-
-    def initialize
-      @watches = {}
     end
 
     def ready?
@@ -438,7 +436,7 @@ module FirebaseExt
 
     def stub(name)
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      @watches[name] ||= Listener.new
+      watches[name] ||= Listener.new
     end
 
     def watch(name, ref, opts={}, &block)
@@ -452,20 +450,20 @@ module FirebaseExt
         data.callback = block.weak!
         data.callback_owner = block.owner
       end
-      if current = @watches[name]
+      if current = watches[name]
         if current == data || current.description == data.description
           return
         end
         current.stop!
         current.rmext_off(:finished, self)
       end
-      @watches[name] = data
+      watches[name] = data
       data.rmext_on(:finished, :queue => QUEUE) do
         rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
         readies = 0
         cancelled = 0
-        size = @watches.size
-        @watches.each_pair do |k, v|
+        size = watches.size
+        watches.each_pair do |k, v|
           if v.ready?
             readies += 1
           elsif v.cancelled?
@@ -488,7 +486,7 @@ module FirebaseExt
     end
 
     def valueForKey(key)
-      @watches[key]
+      watches[key]
     end
 
     def valueForUndefinedKey(key)
@@ -507,13 +505,25 @@ module FirebaseExt
 
     def initialize(opts=nil)
       @opts = opts
-      @dependencies = {}
-      @dependencies_cancelled = {}
-      @dependencies_ready = {}
-      @waiting_once = []
       QUEUE.barrier_async do
         internal_setup
       end
+    end
+
+    def dependencies_cancelled
+      @dependencies_cancelled ||= {}
+    end
+
+    def dependencies_ready
+      @dependencies_ready ||= {}
+    end
+
+    def dependencies
+      @dependencies ||= {}
+    end
+
+    def waiting_once
+      @waiting_once ||= []
     end
 
     def dealloc
@@ -537,7 +547,7 @@ module FirebaseExt
 
     def clear_cycle!
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      @waiting_once = []
+      waiting_once.clear
     end
 
     def ready!
@@ -575,11 +585,11 @@ module FirebaseExt
 
     def check_ready
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      # p "check_ready cancelled?", @api.cancelled?, @dependencies_cancelled.size
-      # p "check_ready ready?", @api.ready?, @dependencies_ready.size, @dependencies.size
-      if @api.cancelled? || @dependencies_cancelled.size > 0
+      # p "check_ready cancelled?", @api.cancelled?, dependencies_cancelled.size
+      # p "check_ready ready?", @api.ready?, dependencies_ready.size, dependencies.size
+      if @api.cancelled? || dependencies_cancelled.size > 0
         cancelled!
-      elsif @api.ready? && @dependencies_ready.size == @dependencies.size
+      elsif @api.ready? && dependencies_ready.size == dependencies.size
         ready!
       end
     end
@@ -605,7 +615,7 @@ module FirebaseExt
     # book.author.attr("name") #=> "Joe Noon"
     def depend(name, model)
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      @dependencies[name] = model
+      dependencies[name] = model
       rmext_ivar(name, model)
       track_dependency_state(model)
       model.rmext_on(:finished, :queue => QUEUE) do |_model|
@@ -618,11 +628,11 @@ module FirebaseExt
     def track_dependency_state(model)
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       if model.ready?
-        @dependencies_ready[model] = true
-        @dependencies_cancelled.delete(model)
+        dependencies_ready[model] = true
+        dependencies_cancelled.delete(model)
       elsif model.cancelled?
-        @dependencies_cancelled[model] = true
-        @dependencies_ready.delete(model)
+        dependencies_cancelled[model] = true
+        dependencies_ready.delete(model)
       end
     end
 
@@ -662,9 +672,9 @@ module FirebaseExt
         FirebaseExt.block_on_queue(queue, block, self)
       else
         QUEUE.barrier_async do
-          @waiting_once << [ self, block.owner ]
+          waiting_once << [ self, block.owner ]
+          rmext_once(:finished, :queue => queue, &block)
         end
-        rmext_once(:finished, :queue => queue, &block)
       end
       self
     end
@@ -726,18 +736,37 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :models, :ready_models
+    def models
+      @models ||= []
+    end
+
+    def ready_models
+      @ready_models ||= []
+    end
 
     def initialize(*models)
-      @waiting_once = []
+      _models = models.flatten.compact.dup
+      QUEUE.barrier_async do
+        setup_models(_models)
+      end
+    end
+
+    def waiting_once
+      @waiting_once ||= []
+    end
+
+    def complete_blocks
+      @complete_blocks ||= {}
+    end
+
+    def setup_models(the_models)
+      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       @ready = false
-      @models = models.flatten.compact.dup
-      @ready_models = []
+      @models = the_models.dup
       @ready_count = 0
-      @pending_count = @models.size
-      @complete_blocks = {}
-      if @models.any?
-        _models = @models.dup
+      @pending_count = models.size
+      if models.any?
+        _models = models.dup
         _pairs = []
         i = 0
         while _models.size > 0
@@ -746,15 +775,15 @@ module FirebaseExt
           blk = proc do
             rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
             # p "COMPLETE!", ii, model
-            @complete_blocks.delete(model)
-            @ready_models[ii] = model
+            complete_blocks.delete(model)
+            ready_models[ii] = model
             @ready_count += 1
             @pending_count -= 1
             if @pending_count == 0
               ready!
             end
           end
-          @complete_blocks[model] = blk
+          complete_blocks[model] = blk
           _pairs << [ model, blk ]
           i += 1
         end
@@ -772,7 +801,7 @@ module FirebaseExt
 
     def clear_cycle!
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      @waiting_once = []
+      waiting_once.clear
     end
 
     def ready!
@@ -787,11 +816,11 @@ module FirebaseExt
 
     def cancel!
       QUEUE.barrier_async do
-        models_outstanding = @complete_blocks.keys.dup
+        models_outstanding = complete_blocks.keys.dup
         while models_outstanding.size > 0
           model = models_outstanding.shift
-          if blk = @complete_blocks[model]
-            @complete_blocks.delete(model)
+          if blk = complete_blocks[model]
+            complete_blocks.delete(model)
             model.cancel_block(&blk)
           end
         end
@@ -811,12 +840,12 @@ module FirebaseExt
         FirebaseExt.block_on_queue(queue, block, ready_models.dup)
       else
         QUEUE.barrier_async do
-          @waiting_once << [ self, block.owner ]
-        end
-        rmext_once(:ready, :queue => queue, &block)
-        if DEBUG_FIREBASE_TIMING
-          rmext_once(:ready, :queue => queue) do |_models|
-            p "BATCH ONCE #{_models.size} like `#{_models.first.rmext_object_desc}`: #{Time.now - start_time}"
+          waiting_once << [ self, block.owner ]
+          rmext_once(:ready, :queue => queue, &block)
+          if DEBUG_FIREBASE_TIMING
+            rmext_once(:ready, :queue => queue) do |_models|
+              p "BATCH ONCE #{_models.size} like `#{_models.first.rmext_object_desc}`: #{Time.now - start_time}"
+            end
           end
         end
       end
@@ -833,7 +862,7 @@ module FirebaseExt
 
     include RMExtensions::CommonMethods
 
-    attr_accessor :transformations_table, :ref, :snaps, :cancelled, :transformations
+    attr_reader :ref
 
     # public
     def ready?
@@ -882,9 +911,9 @@ module FirebaseExt
         FirebaseExt.block_on_queue(queue, block, self)
       else
         QUEUE.barrier_async do
-          @waiting_once << [ self, block.owner ]
+          waiting_once << [ self, block.owner ]
+          rmext_once(:ready, :queue => queue, &block)
         end
-        rmext_once(:ready, :queue => queue, &block)
       end
       self
     end
@@ -1001,14 +1030,29 @@ module FirebaseExt
 
     # internal
     def initialize(ref)
-      @waiting_once = []
-      @snaps = []
-      @snaps_by_name = {}
-      @transformations = []
-      @transformations_table = {}
       QUEUE.barrier_async do
         setup_ref(ref)
       end
+    end
+
+    def waiting_once
+      @waiting_once ||= []
+    end
+
+    def snaps_by_name
+      @snaps_by_name ||= {}
+    end
+
+    def snaps
+      @snaps ||= []
+    end
+
+    def transformations_table
+      @transformations_table ||= {}
+    end
+
+    def transformations
+      @transformations ||= []
     end
 
     # internal
@@ -1051,7 +1095,7 @@ module FirebaseExt
     # internal
     def clear_cycle!
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      @waiting_once = []
+      waiting_once.clear
     end
 
     # internal
@@ -1088,7 +1132,7 @@ module FirebaseExt
     # internal
     def store_transform(snap)
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      @transformations_table[snap] ||= transform(snap)
+      transformations_table[snap] ||= transform(snap)
     end
 
     # internal
@@ -1096,40 +1140,35 @@ module FirebaseExt
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       moved = false
 
-      unless @snaps_by_name
-        # try to catch a bug
-        rmext_require_queue!(QUEUE, __FILE__, __LINE__)
-      end
-
-      if current_index = @snaps_by_name[snap.name]
+      if current_index = snaps_by_name[snap.name]
         if current_index == 0 && prev.nil?
           return
-        elsif current_index > 0 && prev && @snaps_by_name[prev] == current_index - 1
+        elsif current_index > 0 && prev && snaps_by_name[prev] == current_index - 1
           return
         end
         moved = true
-        @snaps.delete_at(current_index)
-        @transformations.delete_at(current_index)
-        if was_index = @snaps_by_name.delete(snap.name)
-          @snaps_by_name.each_pair do |k, v|
+        snaps.delete_at(current_index)
+        transformations.delete_at(current_index)
+        if was_index = snaps_by_name.delete(snap.name)
+          snaps_by_name.each_pair do |k, v|
             if v > was_index
-              @snaps_by_name[k] -= 1
+              snaps_by_name[k] -= 1
             end
           end
         end
       end
-      if prev && (index = @snaps_by_name[prev])
+      if prev && (index = snaps_by_name[prev])
         new_index = index + 1
-        @snaps.insert(new_index, snap)
-        @transformations.insert(new_index, store_transform(snap))
-        @snaps_by_name[snap.name] = new_index
+        snaps.insert(new_index, snap)
+        transformations.insert(new_index, store_transform(snap))
+        snaps_by_name[snap.name] = new_index
       else
-        @snaps.unshift(snap)
-        @transformations.unshift(store_transform(snap))
-        @snaps_by_name.each_pair do |k, v|
-          @snaps_by_name[k] += 1
+        snaps.unshift(snap)
+        transformations.unshift(store_transform(snap))
+        snaps_by_name.each_pair do |k, v|
+          snaps_by_name[k] += 1
         end
-        @snaps_by_name[snap.name] = 0
+        snaps_by_name[snap.name] = 0
       end
       if moved
         rmext_trigger(:moved, self, snap, prev)
@@ -1142,12 +1181,12 @@ module FirebaseExt
 
     # internal
     def remove(snap)
-      if current_index = @snaps_by_name[snap.name]
-        @snaps.delete_at(current_index)
-        @transformations.delete_at(current_index)
-        @snaps_by_name.each_pair do |k, v|
+      if current_index = snaps_by_name[snap.name]
+        snaps.delete_at(current_index)
+        transformations.delete_at(current_index)
+        snaps_by_name.each_pair do |k, v|
           if v > current_index
-            @snaps_by_name[k] -= 1
+            snaps_by_name[k] -= 1
           end
         end
         rmext_trigger(:removed, self, snap)
