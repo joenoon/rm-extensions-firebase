@@ -2,6 +2,10 @@ class Firebase
 
   DEBUG_SETVALUE = RMExtensions::Env['rmext_firebase_debug_setvalue'] == '1'
 
+  def rmext_object_desc
+    "#{super}:#{description}"
+  end
+
   def [](*names)
     if names.length == 0
       childByAutoId
@@ -99,6 +103,10 @@ class FQuery
     :value => FEventTypeValue
   }
 
+  def rmext_object_desc
+    "#{super}:#{description}"
+  end
+
   def limited(limit)
     queryLimitedToNumberOfChildren(limit)
   end
@@ -110,6 +118,8 @@ class FQuery
   def ending_at(priority)
     queryEndingAtPriority(priority)
   end
+
+  HANDLER_SYNC_QUEUE = Dispatch::Queue.new("FirebaseExt.HANDLER_SYNC_QUEUE")
 
   def on(_event_type, options={}, &and_then)
     and_then = (and_then || options[:completion]).weak!
@@ -168,8 +178,10 @@ class FQuery
       end
     end
     unless options[:once]
-      @_outstanding_handlers ||= OutstandingHandlers.new(self)
-      @_outstanding_handlers << handler
+      HANDLER_SYNC_QUEUE.sync do
+        @_outstanding_handlers ||= OutstandingHandlers.new(self)
+        @_outstanding_handlers << handler
+      end
     end
     handler
   end
@@ -192,7 +204,7 @@ class FQuery
     def off(handle=nil)
       if @scope.weakref_alive?
         if _handle = @handlers.delete(handle)
-          p "remove handle", _handle
+          # p @scope.rmext_object_desc, "remove handle", _handle
           @scope.removeObserverWithHandle(_handle)
         else
           _handlers = @handlers.dup
@@ -214,9 +226,16 @@ class FQuery
     on(event_type, options.merge(:once => true), &and_then)
   end
 
-  def off(handle)
+  def _off(handle)
     if @_outstanding_handlers
       @_outstanding_handlers.off(handle)
+    end
+    self
+  end
+
+  def off(handle)
+    HANDLER_SYNC_QUEUE.sync do
+      _off(handle)
     end
     self
   end
@@ -1106,22 +1125,18 @@ module FirebaseExt
         if @added_handler
           @ref.off(@added_handler)
           @added_handler = nil
-          p "removed added_handler"
         end
         if @removed_handler
           @ref.off(@removed_handler)
           @removed_handler = nil
-          p "removed removed_handler"
         end
         if @moved_handler
           @ref.off(@moved_handler)
           @moved_handler = nil
-          p "removed moved_handler"
         end
         if @value_handler
           @ref.off(@value_handler)
           @value_handler = nil
-          p "removed value_handler"
         end
         @ref = nil
       end
