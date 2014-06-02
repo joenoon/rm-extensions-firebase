@@ -544,10 +544,6 @@ module FirebaseExt
       @dependencies ||= {}
     end
 
-    def waiting_once
-      @waiting_once ||= []
-    end
-
     def dealloc
       if DEBUG_MODEL_DEALLOC
         p " - dealloc!"
@@ -567,18 +563,12 @@ module FirebaseExt
       ready? || cancelled?
     end
 
-    def clear_cycle!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      waiting_once.clear
-    end
-
     def ready!
       QUEUE.barrier_async do
         # p "ready!"
         @ready = true
         rmext_trigger(:ready, self)
         rmext_trigger(:finished, self)
-        clear_cycle!
       end
     end
 
@@ -587,7 +577,6 @@ module FirebaseExt
         @cancelled = true
         rmext_trigger(:cancelled, self)
         rmext_trigger(:finished, self)
-        clear_cycle!
       end
     end
 
@@ -689,13 +678,21 @@ module FirebaseExt
       unbinder
     end
 
+    # Model
     def once(queue=nil, &block)
-      if ready? || cancelled?
-        FirebaseExt.block_on_queue(queue, block, self)
-      else
-        QUEUE.barrier_async do
-          waiting_once << [ self, block.owner ]
-          rmext_once(:finished, :queue => queue, &block)
+      retain
+      block.owner.retain
+      QUEUE.barrier_async do
+        if ready? || cancelled?
+          FirebaseExt.block_on_queue(queue, block, self)
+          release
+          block.owner.release
+        else
+          rmext_once(:ready, :queue => queue, &block)
+          rmext_once(:finished, :queue => queue) do
+            release
+            block.owner.release
+          end
         end
       end
       self
@@ -773,10 +770,6 @@ module FirebaseExt
       end
     end
 
-    def waiting_once
-      @waiting_once ||= []
-    end
-
     def complete_blocks
       @complete_blocks ||= {}
     end
@@ -821,18 +814,12 @@ module FirebaseExt
       end
     end
 
-    def clear_cycle!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      waiting_once.clear
-    end
-
     def ready!
       QUEUE.barrier_async do
         @ready = true
         # p "models", models.dup
         # p "ready_models", ready_models.dup
         rmext_trigger(:ready, ready_models.dup)
-        clear_cycle!
       end
     end
 
@@ -846,7 +833,6 @@ module FirebaseExt
             model.cancel_block(&blk)
           end
         end
-        clear_cycle!
       end
     end
 
@@ -854,16 +840,24 @@ module FirebaseExt
       !!@ready
     end
 
+    # Batch
     def once(queue=nil, &block)
-      start_time = if DEBUG_FIREBASE_TIMING
-        Time.now
-      end
-      if ready?
-        FirebaseExt.block_on_queue(queue, block, ready_models.dup)
-      else
-        QUEUE.barrier_async do
-          waiting_once << [ self, block.owner ]
+      retain
+      block.owner.retain
+      QUEUE.barrier_async do
+        start_time = if DEBUG_FIREBASE_TIMING
+          Time.now
+        end
+        if ready?
+          FirebaseExt.block_on_queue(queue, block, ready_models.dup)
+          release
+          block.owner.release
+        else
           rmext_once(:ready, :queue => queue, &block)
+          rmext_once(:ready, :queue => queue) do
+            release
+            block.owner.release
+          end
           if DEBUG_FIREBASE_TIMING
             rmext_once(:ready, :queue => queue) do |_models|
               p "BATCH ONCE #{_models.size} like `#{_models.first.rmext_object_desc}`: #{Time.now - start_time}"
@@ -926,15 +920,23 @@ module FirebaseExt
       once(:async, &block)
     end
 
+    # Collection
     # completes with `self` once, when the collection is ready.
     # retains `self` and the sender until complete
     def once(queue=nil, &block)
-      if ready?
-        FirebaseExt.block_on_queue(queue, block, self)
-      else
-        QUEUE.barrier_async do
-          waiting_once << [ self, block.owner ]
+      retain
+      block.owner.retain
+      QUEUE.barrier_async do
+        if ready?
+          FirebaseExt.block_on_queue(queue, block, self)
+          release
+          block.owner.release
+        else
           rmext_once(:ready, :queue => queue, &block)
+          rmext_once(:finished, :queue => queue) do
+            release
+            block.owner.release
+          end
         end
       end
       self
@@ -1057,10 +1059,6 @@ module FirebaseExt
       end
     end
 
-    def waiting_once
-      @waiting_once ||= []
-    end
-
     def snaps_by_name
       @snaps_by_name ||= {}
     end
@@ -1144,18 +1142,12 @@ module FirebaseExt
 
 
     # internal
-    def clear_cycle!
-      rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
-      waiting_once.clear
-    end
-
-    # internal
     def ready!
       QUEUE.barrier_async do
         @ready = true
         rmext_trigger(:ready, self)
         rmext_trigger(:changed, self)
-        clear_cycle!
+        rmext_trigger(:finished, self)
       end
     end
 
@@ -1164,7 +1156,7 @@ module FirebaseExt
       QUEUE.barrier_async do
         @cancelled = true
         rmext_trigger(:cancelled, self)
-        clear_cycle!
+        rmext_trigger(:finished, self)
       end
     end
 
@@ -1227,7 +1219,10 @@ module FirebaseExt
         rmext_trigger(:added, self, snap, prev)
       end
       rmext_trigger(:changed, self)
-      rmext_trigger(:ready, self) if ready?
+      if ready?
+        rmext_trigger(:ready, self)
+        rmext_trigger(:finished, self)
+      end
     end
 
     # internal
@@ -1242,7 +1237,10 @@ module FirebaseExt
         end
         rmext_trigger(:removed, self, snap)
         rmext_trigger(:changed, self)
-        rmext_trigger(:ready, self) if ready?
+        if ready?
+          rmext_trigger(:ready, self)
+          rmext_trigger(:finished, self)
+        end
       end
     end
 
