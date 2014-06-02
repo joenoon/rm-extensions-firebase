@@ -306,45 +306,27 @@ module FirebaseExt
     end
 
     def value
-      snap.retain
-      v = snap.value
-      snap.release
-      v
+      snap.retain.autorelease.value
     end
 
     def ref
-      snap.retain
-      v = snap.ref
-      snap.release
-      v
+      snap.retain.autorelease.ref
     end
 
     def name
-      snap.retain
-      v = snap.name
-      snap.release
-      v
+      snap.retain.autorelease.name
     end
 
     def priority
-      snap.retain
-      v = snap.priority
-      snap.release
-      v
+      snap.retain.autorelease.priority
     end
 
     def count
-      snap.retain
-      v = snap.childrenCount
-      snap.release
-      v
+      snap.retain.autorelease.childrenCount
     end
 
     def children
-      snap.retain
-      v = snap.snap.children.each.map { |x| DataSnapshot.new(x) }
-      snap.release
-      v
+      snap.retain.autorelease.children.each.map { |x| DataSnapshot.new(x) }
     end
 
   end
@@ -700,18 +682,18 @@ module FirebaseExt
 
     # Model
     def once(queue=nil, &block)
-      retain
-      block.owner.retain
       QUEUE.barrier_async do
+        retain
+        block.owner.retain
         if ready? || cancelled?
           FirebaseExt.block_on_queue(queue, block, self)
-          release
-          block.owner.release
+          autorelease
+          block.owner.autorelease
         else
           rmext_once(:ready, :queue => queue, &block)
           rmext_once(:finished, :queue => queue) do
-            release
-            block.owner.release
+            autorelease
+            block.owner.autorelease
           end
         end
       end
@@ -862,21 +844,21 @@ module FirebaseExt
 
     # Batch
     def once(queue=nil, &block)
-      retain
-      block.owner.retain
       QUEUE.barrier_async do
+        retain
+        block.owner.retain
         start_time = if DEBUG_FIREBASE_TIMING
           Time.now
         end
         if ready?
           FirebaseExt.block_on_queue(queue, block, ready_models.dup)
-          release
-          block.owner.release
+          autorelease
+          block.owner.autorelease
         else
           rmext_once(:ready, :queue => queue, &block)
           rmext_once(:ready, :queue => queue) do
-            release
-            block.owner.release
+            autorelease
+            block.owner.autorelease
           end
           if DEBUG_FIREBASE_TIMING
             rmext_once(:ready, :queue => queue) do |_models|
@@ -944,18 +926,18 @@ module FirebaseExt
     # completes with `self` once, when the collection is ready.
     # retains `self` and the sender until complete
     def once(queue=nil, &block)
-      retain
-      block.owner.retain
       QUEUE.barrier_async do
+        retain
+        block.owner.retain
         if ready?
           FirebaseExt.block_on_queue(queue, block, self)
-          release
-          block.owner.release
+          autorelease
+          block.owner.autorelease
         else
           rmext_once(:ready, :queue => queue, &block)
           rmext_once(:finished, :queue => queue) do
-            release
-            block.owner.release
+            autorelease
+            block.owner.autorelease
           end
         end
       end
@@ -1096,9 +1078,10 @@ module FirebaseExt
     end
 
     # internal
-    def setup_ref(ref)
+    def setup_ref(_ref)
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       _clear_current_ref!
+      @ref = _ref
       @ready = false
       @cancelled = false
       weak_self = WeakRef.new(self)
@@ -1108,30 +1091,29 @@ module FirebaseExt
           cancelled!
         end
       end
-      @added_handler = ref.on(:added) do |snap, prev|
+      @added_handler = @ref.on(:added) do |snap, prev|
         # p "NORMAL ", snap.name, prev
         QUEUE.barrier_async do
           # p "BARRIER", snap.name, prev
           add(snap, prev)
         end
       end
-      @removed_handler = ref.on(:removed) do |snap|
+      @removed_handler = @ref.on(:removed) do |snap|
         QUEUE.barrier_async do
           remove(snap)
         end
       end
-      @moved_handler = ref.on(:moved) do |snap, prev|
+      @moved_handler = @ref.on(:moved) do |snap, prev|
         QUEUE.barrier_async do
           add(snap, prev)
         end
       end
-      @value_handler = ref.once(:value, { :disconnect => cancel_block }) do |collection|
+      @value_handler = @ref.once(:value, { :disconnect => cancel_block }) do |collection|
         @value_handler = nil
         QUEUE.barrier_async do
           ready!
         end
       end
-      @ref = ref
     end
 
     def rmext_dealloc
