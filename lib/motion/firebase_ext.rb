@@ -296,7 +296,9 @@ module FirebaseExt
     end
 
     def valueForKey(key)
-      value && value[key]
+      if v = value
+        v[key]
+      end
     end
 
     def valueForUndefinedKey(key)
@@ -304,27 +306,45 @@ module FirebaseExt
     end
 
     def value
-      snap.value
+      snap.retain
+      v = snap.value
+      snap.release
+      v
     end
 
     def ref
-      snap.ref
+      snap.retain
+      v = snap.ref
+      snap.release
+      v
     end
 
     def name
-      snap.name
+      snap.retain
+      v = snap.name
+      snap.release
+      v
     end
 
     def priority
-      snap.priority
+      snap.retain
+      v = snap.priority
+      snap.release
+      v
     end
 
     def count
-      snap.childrenCount
+      snap.retain
+      v = snap.childrenCount
+      snap.release
+      v
     end
 
     def children
-      snap.children.each.map { |x| DataSnapshot.new(x) }
+      snap.retain
+      v = snap.snap.children.each.map { |x| DataSnapshot.new(x) }
+      snap.release
+      v
     end
 
   end
