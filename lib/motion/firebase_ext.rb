@@ -766,7 +766,7 @@ module FirebaseExt
     end
 
     Dispatch.once do
-      @@identity_map = RMExtensions::IdentityMap.new
+      @@identity_map = {}
     end
 
     def self.identity_map
@@ -1386,7 +1386,7 @@ module FirebaseExt
     end
 
     Dispatch.once do
-      @@identity_map = RMExtensions::IdentityMap.new
+      @@identity_map = {}
     end
 
     def self.identity_map
