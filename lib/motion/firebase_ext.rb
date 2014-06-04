@@ -1152,6 +1152,38 @@ module FirebaseExt
       end
     end
 
+    def refresh_order!
+      QUEUE.barrier_async do
+        next unless @ref
+        if @added_handler
+          @ref.off(@added_handler)
+          @added_handler = nil
+        end
+        @added_handler = @ref.on(:added) do |snap, prev|
+          # p "NORMAL ", snap.name, prev
+          QUEUE.barrier_async do
+            # p "BARRIER", snap.name, prev
+            add(snap, prev)
+          end
+        end
+      end
+    end
+
+    # mess up the order on purpose
+    def _test_scatter!
+      QUEUE.barrier_async do
+        _snaps = @snaps.dup
+        p "before scatter", @snaps.map(&:name)
+        p "before scatter snaps_by_name", @snaps_by_name
+
+        _snaps.each do |snap|
+          others = _snaps - [ snap ]
+          random = others.sample
+          add(snap, random.name)
+        end
+      end
+    end
+
     def rmext_dealloc
       _clear_current_ref!
     end
@@ -1216,6 +1248,20 @@ module FirebaseExt
       transformations_table[snap] ||= transform(snap)
     end
 
+    def _log_snap_names
+      QUEUE.barrier_sync do
+        puts "snaps_by_name:"
+        _log_hash(snaps_by_name)
+      end
+    end
+
+
+    def _log_hash(hash)
+      hash.to_a.sort_by { |x| x[1] }.each do |pair|
+        puts pair.inspect
+      end
+    end
+
     # internal
     def add(snap, prev)
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
@@ -1231,25 +1277,37 @@ module FirebaseExt
         snaps.delete_at(current_index)
         transformations.delete_at(current_index)
         if was_index = snaps_by_name.delete(snap.name)
-          snaps_by_name.each_pair do |k, v|
+          snaps_by_name.keys.each do |k|
+            v = snaps_by_name[k]
             if v > was_index
               snaps_by_name[k] -= 1
             end
           end
         end
+        # raise if snaps_by_name.values.uniq.size != snaps_by_name.values.size
       end
+      # raise if snaps_by_name.values.uniq.size != snaps_by_name.values.size
       if prev && (index = snaps_by_name[prev])
         new_index = index + 1
         snaps.insert(new_index, snap)
         transformations.insert(new_index, store_transform(snap))
+        snaps_by_name.keys.each do |k|
+          v = snaps_by_name[k]
+          if v >= new_index
+            snaps_by_name[k] += 1
+          end
+        end
         snaps_by_name[snap.name] = new_index
+        # raise if snaps_by_name.values.uniq.size != snaps_by_name.values.size
       else
         snaps.unshift(snap)
         transformations.unshift(store_transform(snap))
-        snaps_by_name.each_pair do |k, v|
+        snaps_by_name.keys.each do |k|
+          v = snaps_by_name[k]
           snaps_by_name[k] += 1
         end
         snaps_by_name[snap.name] = 0
+        # raise if snaps_by_name.values.uniq.size != snaps_by_name.values.size
       end
       if moved
         rmext_trigger(:moved, self, snap, prev)
@@ -1268,7 +1326,8 @@ module FirebaseExt
       if current_index = snaps_by_name[snap.name]
         snaps.delete_at(current_index)
         transformations.delete_at(current_index)
-        snaps_by_name.each_pair do |k, v|
+        snaps_by_name.keys.each do |k|
+          v = snaps_by_name[k]
           if v > current_index
             snaps_by_name[k] -= 1
           end
