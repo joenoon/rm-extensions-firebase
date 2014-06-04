@@ -367,7 +367,9 @@ module FirebaseExt
         end
       end
       @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
+        retain.autorelease
         QUEUE.barrier_async do
+          retain.autorelease
           @snapshot = snap
           if value_required && !snap.hasValue?
             cancel_block.call(NSError.errorWithDomain("requirement failure", code:0, userInfo:{
@@ -1128,6 +1130,7 @@ module FirebaseExt
 
     # internal
     def setup_ref(_ref)
+      retain.autorelease
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       _clear_current_ref!
       @ref = _ref
@@ -1141,25 +1144,33 @@ module FirebaseExt
         end
       end
       @added_handler = @ref.on(:added) do |snap, prev|
+        retain.autorelease
         # p "NORMAL ", snap.name, prev
         QUEUE.barrier_async do
+          retain.autorelease
           # p "BARRIER", snap.name, prev
           add(snap, prev)
         end
       end
       @removed_handler = @ref.on(:removed) do |snap|
+        retain.autorelease
         QUEUE.barrier_async do
+          retain.autorelease
           remove(snap)
         end
       end
       @moved_handler = @ref.on(:moved) do |snap, prev|
+        retain.autorelease
         QUEUE.barrier_async do
+          retain.autorelease
           add(snap, prev)
         end
       end
       @value_handler = @ref.once(:value, { :disconnect => cancel_block }) do |collection|
+        retain.autorelease
         @value_handler = nil
         QUEUE.barrier_async do
+          retain.autorelease
           ready!
         end
       end
@@ -1257,6 +1268,7 @@ module FirebaseExt
 
     # internal
     def store_transform(snap)
+      retain.autorelease
       rmext_require_queue!(QUEUE, __FILE__, __LINE__) if RMExtensions::DEBUG_QUEUES
       transformations_table[snap] ||= transform(snap)
     end
