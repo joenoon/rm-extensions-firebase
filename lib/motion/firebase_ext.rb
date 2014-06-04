@@ -179,7 +179,9 @@ class FQuery
     end
     unless options[:once]
       HANDLER_SYNC_QUEUE.sync do
-        @_outstanding_handlers ||= OutstandingHandlers.new(self)
+        unless @_outstanding_handlers
+          @_outstanding_handlers = OutstandingHandlers.new(self)
+        end
         @_outstanding_handlers << handler
       end
     end
@@ -416,7 +418,10 @@ module FirebaseExt
     include RMExtensions::CommonMethods
 
     def watches
-      @watches ||= {}
+      unless @watches
+        @watches = {}
+      end
+      @watches
     end
 
     def clear!
@@ -535,15 +540,24 @@ module FirebaseExt
     end
 
     def dependencies_cancelled
-      @dependencies_cancelled ||= {}
+      unless @dependencies_cancelled
+        @dependencies_cancelled = {}
+      end
+      @dependencies_cancelled
     end
 
     def dependencies_ready
-      @dependencies_ready ||= {}
+      unless @dependencies_ready
+        @dependencies_ready = {}
+      end
+      @dependencies_ready
     end
 
     def dependencies
-      @dependencies ||= {}
+      unless @dependencies
+        @dependencies = {}
+      end
+      @dependencies
     end
 
     def dealloc
@@ -737,7 +751,7 @@ module FirebaseExt
         end
         res = new(opts)
         if opts
-          identity_map[[ className, opts ]] ||= res
+          identity_map[[ className, opts ]] = res
         end
         res
       end
@@ -758,11 +772,17 @@ module FirebaseExt
     include RMExtensions::CommonMethods
 
     def models
-      @models ||= []
+      unless @models
+        @models = []
+      end
+      @models
     end
 
     def ready_models
-      @ready_models ||= []
+      unless @ready_models
+        @ready_models = []
+      end
+      @ready_models
     end
 
     def initialize(*models)
@@ -773,7 +793,10 @@ module FirebaseExt
     end
 
     def complete_blocks
-      @complete_blocks ||= {}
+      unless @complete_blocks
+        @complete_blocks = {}
+      end
+      @complete_blocks
     end
 
     def setup_models(the_models)
@@ -1062,19 +1085,32 @@ module FirebaseExt
     end
 
     def snaps_by_name
-      @snaps_by_name ||= {}
+      unless @snaps_by_name
+        @snaps_by_name = {}
+      end
+      @snaps_by_name
     end
 
     def snaps
-      @snaps ||= []
+      unless @snaps
+        @snaps = []
+      end
+      @snaps
+
     end
 
     def transformations_table
-      @transformations_table ||= {}
+      unless @transformations_table
+        @transformations_table = {}
+      end
+      @transformations_table
     end
 
     def transformations
-      @transformations ||= []
+      unless @transformations
+        @transformations = []
+      end
+      @transformations
     end
 
     # internal
@@ -1259,7 +1295,7 @@ module FirebaseExt
         end
         res = new(ref)
         if ref
-          identity_map[[ className, ref.description ]] ||= res
+          identity_map[[ className, ref.description ]] = res
         end
         res
       end
