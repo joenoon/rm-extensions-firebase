@@ -178,7 +178,9 @@ class FQuery
       end
     end
     unless options[:once]
+      retain.autorelease
       HANDLER_SYNC_QUEUE.sync do
+        retain.autorelease
         unless @_outstanding_handlers
           @_outstanding_handlers = OutstandingHandlers.new(self)
         end
@@ -418,6 +420,7 @@ module FirebaseExt
     include RMExtensions::CommonMethods
 
     def watches
+      retain.autorelease
       unless @watches
         @watches = {}
       end
@@ -540,6 +543,7 @@ module FirebaseExt
     end
 
     def dependencies_cancelled
+      retain.autorelease
       unless @dependencies_cancelled
         @dependencies_cancelled = {}
       end
@@ -547,6 +551,7 @@ module FirebaseExt
     end
 
     def dependencies_ready
+      retain.autorelease
       unless @dependencies_ready
         @dependencies_ready = {}
       end
@@ -554,6 +559,7 @@ module FirebaseExt
     end
 
     def dependencies
+      retain.autorelease
       unless @dependencies
         @dependencies = {}
       end
@@ -772,6 +778,7 @@ module FirebaseExt
     include RMExtensions::CommonMethods
 
     def models
+      retain.autorelease
       unless @models
         @models = []
       end
@@ -779,6 +786,7 @@ module FirebaseExt
     end
 
     def ready_models
+      retain.autorelease
       unless @ready_models
         @ready_models = []
       end
@@ -793,6 +801,7 @@ module FirebaseExt
     end
 
     def complete_blocks
+      retain.autorelease
       unless @complete_blocks
         @complete_blocks = {}
       end
@@ -1085,6 +1094,7 @@ module FirebaseExt
     end
 
     def snaps_by_name
+      retain.autorelease
       unless @snaps_by_name
         @snaps_by_name = {}
       end
@@ -1092,6 +1102,7 @@ module FirebaseExt
     end
 
     def snaps
+      retain.autorelease
       unless @snaps
         @snaps = []
       end
@@ -1100,6 +1111,7 @@ module FirebaseExt
     end
 
     def transformations_table
+      retain.autorelease
       unless @transformations_table
         @transformations_table = {}
       end
@@ -1107,6 +1119,7 @@ module FirebaseExt
     end
 
     def transformations
+      retain.autorelease
       unless @transformations
         @transformations = []
       end
