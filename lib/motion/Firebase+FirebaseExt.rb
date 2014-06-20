@@ -2,7 +2,7 @@ class Firebase
 
   DEBUG_SETVALUE = RMExtensions::Env['rmext_firebase_debug_setvalue'] == '1'
 
-  INTERNAL_QUEUE = RMX::Queue.new(Dispatch::Queue.new("FirebaseExt.internal"))
+  INTERNAL_QUEUE = Dispatch::Queue.new("FirebaseExt.internal")
 
   def rmext_object_desc
     "#{super}:#{description}"

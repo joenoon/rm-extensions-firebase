@@ -46,7 +46,8 @@ class FQuery
         disconnect_inner_block.call(err)
       end.weak!
     end
-    handler = if and_then.arity == 1
+    handler = nil
+    if and_then.arity == 1
       inner_block = RMExtensions.safe_block(lambda do |snap|
         datasnap = FirebaseExt::DataSnapshot.new(snap)
         completion.call(datasnap)
@@ -57,21 +58,21 @@ class FQuery
       if disconnect_block
         if options[:once]
           Firebase.dispatchQueue.sync do
-            observeSingleEventOfType(event_type, withBlock:wrapped_block, withCancelBlock:disconnect_block)
+            handler = observeSingleEventOfType(event_type, withBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         else
           Firebase.dispatchQueue.sync do
-            observeEventType(event_type, withBlock:wrapped_block, withCancelBlock:disconnect_block)
+            handler = observeEventType(event_type, withBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         end
       else
         if options[:once]
           Firebase.dispatchQueue.sync do
-            observeSingleEventOfType(event_type, withBlock:wrapped_block)
+            handler = observeSingleEventOfType(event_type, withBlock:wrapped_block)
           end
         else
           Firebase.dispatchQueue.sync do
-            observeEventType(event_type, withBlock:wrapped_block)
+            handler = observeEventType(event_type, withBlock:wrapped_block)
           end
         end
       end
@@ -86,21 +87,21 @@ class FQuery
       if disconnect_block
         if options[:once]
           Firebase.dispatchQueue.sync do
-            observeSingleEventOfType(event_type, andPreviousSiblingNameWithBlock:wrapped_block, withCancelBlock:disconnect_block)
+            handler = observeSingleEventOfType(event_type, andPreviousSiblingNameWithBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         else
           Firebase.dispatchQueue.sync do
-            observeEventType(event_type, andPreviousSiblingNameWithBlock:wrapped_block, withCancelBlock:disconnect_block)
+            handler = observeEventType(event_type, andPreviousSiblingNameWithBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         end
       else
         if options[:once]
           Firebase.dispatchQueue.sync do
-            observeSingleEventOfType(event_type, andPreviousSiblingNameWithBlock:wrapped_block)
+            handler = observeSingleEventOfType(event_type, andPreviousSiblingNameWithBlock:wrapped_block)
           end
         else
           Firebase.dispatchQueue.sync do
-            observeEventType(event_type, andPreviousSiblingNameWithBlock:wrapped_block)
+            handler = observeEventType(event_type, andPreviousSiblingNameWithBlock:wrapped_block)
           end
         end
       end
