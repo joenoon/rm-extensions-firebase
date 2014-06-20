@@ -7,8 +7,20 @@ end
 Motion::Project::App.setup do |app|
   index = app.files.rindex { |x| x.index("rm-extensions") }
   %w(
-    firebase_ext
-  ).reverse.each_with_index do |x, i|
+    Firebase+FirebaseExt
+    FQuery+FirebaseExt
+    FirebaseExt
+    DataSnapshot
+    Listener
+    Coordinator
+    Model
+    Batch
+    Collection
+    HandleModel
+    TableViewCell
+    View
+    ViewController
+  ).each_with_index do |x, i|
     app.files.insert(index + 1 + i, File.join(File.dirname(__FILE__), "motion/#{x}.rb"))
   end
 end
