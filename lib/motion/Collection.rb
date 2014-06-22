@@ -48,7 +48,7 @@ module FirebaseExt
     # completes with `self` once, when the collection is ready.
     # retains `self` and the sender until complete
     def once(queue=nil, &block)
-      QUEUE.async do
+      QUEUE.barrier_async do
         if ready?
           FirebaseExt.block_on_queue(queue, self, &block)
         else
@@ -107,7 +107,7 @@ module FirebaseExt
 
     def self.new(ref)
       x = super()
-      QUEUE.async do
+      QUEUE.barrier_async do
         x.setup_ref(ref)
       end
       x
@@ -134,24 +134,24 @@ module FirebaseExt
       end
       @added_handler = @ref.on(:added) do |snap, prev|
         # p "NORMAL ", snap.name, prev
-        QUEUE.async do
+        QUEUE.barrier_async do
           # p "BARRIER", snap.name, prev
           add(snap, prev)
         end
       end
       @removed_handler = @ref.on(:removed) do |snap|
-        QUEUE.async do
+        QUEUE.barrier_async do
           remove(snap)
         end
       end
       @moved_handler = @ref.on(:moved) do |snap, prev|
-        QUEUE.async do
+        QUEUE.barrier_async do
           add(snap, prev)
         end
       end
       @value_handler = @ref.once(:value, { :disconnect => cancel_block }) do |collection|
         @value_handler = nil
-        QUEUE.async do
+        QUEUE.barrier_async do
           ready!
         end
       end
@@ -159,7 +159,7 @@ module FirebaseExt
     end
 
     def refresh_order!
-      QUEUE.async do
+      QUEUE.barrier_async do
         next unless @ref
         if @added_handler
           @ref.off(@added_handler)
@@ -167,7 +167,7 @@ module FirebaseExt
         end
         @added_handler = @ref.on(:added) do |snap, prev|
           # p "NORMAL ", snap.name, prev
-          QUEUE.async do
+          QUEUE.barrier_async do
             # p "BARRIER", snap.name, prev
             add(snap, prev)
           end
@@ -177,7 +177,7 @@ module FirebaseExt
 
     # mess up the order on purpose
     def _test_scatter!
-      QUEUE.async do
+      QUEUE.barrier_async do
         _snaps = @snaps.dup
         p "before scatter", @snaps.map(&:name)
         p "before scatter snaps_by_name", @snaps_by_name
@@ -219,7 +219,7 @@ module FirebaseExt
 
     # internal
     def ready!
-      QUEUE.async do
+      QUEUE.barrier_async do
         @ready = true
         rmext_trigger(:ready, self)
         rmext_trigger(:changed, self)
@@ -229,7 +229,7 @@ module FirebaseExt
 
     # internal
     def cancelled!
-      QUEUE.async do
+      QUEUE.barrier_async do
         @cancelled = true
         rmext_trigger(:cancelled, self)
         rmext_trigger(:finished, self)
@@ -253,7 +253,7 @@ module FirebaseExt
     end
 
     def _log_snap_names
-      QUEUE.async do
+      QUEUE.barrier_async do
         puts "snaps_by_name:"
         _log_hash(@snaps_by_name)
       end

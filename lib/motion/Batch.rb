@@ -8,7 +8,7 @@ module FirebaseExt
       _models = models.dup
       _models = _models.flatten.compact
       x = super()
-      QUEUE.async do
+      QUEUE.barrier_async do
         x.setup_models(_models)
       end
       x
@@ -48,20 +48,20 @@ module FirebaseExt
           _pairs << [ model, blk ]
           i += 1
         end
-        QUEUE.async do
+        QUEUE.barrier_async do
           while pair = _pairs.shift
             pair[0].once(QUEUE, &pair[1])
           end
         end
       else
-        QUEUE.async do
+        QUEUE.barrier_async do
           ready!
         end
       end
     end
 
     def ready!
-      QUEUE.async do
+      QUEUE.barrier_async do
         @ready = true
         # p "models", models.dup
         # p "ready_models", ready_models.dup
@@ -70,7 +70,7 @@ module FirebaseExt
     end
 
     def cancel!
-      QUEUE.async do
+      QUEUE.barrier_async do
         models_outstanding = @complete_blocks.keys.dup
         while models_outstanding.size > 0
           model = models_outstanding.shift
@@ -88,7 +88,7 @@ module FirebaseExt
 
     # Batch
     def once(queue=nil, &block)
-      QUEUE.async do
+      QUEUE.barrier_async do
         if ready?
           FirebaseExt.block_on_queue(queue, @ready_models.dup, &block)
         else

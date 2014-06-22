@@ -14,7 +14,7 @@ module FirebaseExt
 
     def self.new(opts=nil)
       x = super
-      QUEUE.async do
+      QUEUE.barrier_async do
         x.internal_setup
       end
       x
@@ -47,7 +47,7 @@ module FirebaseExt
     end
 
     def ready!
-      QUEUE.async do
+      QUEUE.barrier_async do
         # p "ready!"
         @ready = true
         rmext_trigger(:ready, self)
@@ -56,7 +56,7 @@ module FirebaseExt
     end
 
     def cancelled!
-      QUEUE.async do
+      QUEUE.barrier_async do
         @cancelled = true
         rmext_trigger(:cancelled, self)
         rmext_trigger(:finished, self)
@@ -145,7 +145,7 @@ module FirebaseExt
 
     # Model
     def once(queue=nil, &block)
-      QUEUE.async do
+      QUEUE.barrier_async do
         if ready? || cancelled?
           FirebaseExt.block_on_queue(queue, self, &block)
         else

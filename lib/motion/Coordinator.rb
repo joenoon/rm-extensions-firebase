@@ -11,7 +11,7 @@ module FirebaseExt
     end
 
     def clear!
-      QUEUE.async do
+      QUEUE.barrier_async do
         @cancelled = false
         @ready = false
         keys = watches.keys.dup
@@ -34,7 +34,7 @@ module FirebaseExt
     end
 
     def ready!
-      QUEUE.async do
+      QUEUE.barrier_async do
         @ready = true
         rmext_trigger(:ready, self)
         rmext_trigger(:finished, self)
@@ -42,7 +42,7 @@ module FirebaseExt
     end
 
     def cancelled!
-      QUEUE.async do
+      QUEUE.barrier_async do
         @cancelled = true
         rmext_trigger(:cancelled, self)
         rmext_trigger(:finished, self)
