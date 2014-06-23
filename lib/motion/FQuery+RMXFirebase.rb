@@ -12,7 +12,7 @@ class FQuery
     :value => FEventTypeValue
   }
 
-  def rmext_object_desc
+  def rmx_object_desc
     "#{super}:#{description}"
   end
 
@@ -32,7 +32,7 @@ class FQuery
     and_then ||= options[:completion]
     raise "event handler is required" unless and_then
     raise "event handler must accept one or two arguments" unless and_then.arity == 1 || and_then.arity == 2
-    completion = RMExtensions.safe_block(and_then)
+    completion = RMX.safe_block(and_then)
 
     event_type = EVENT_TYPES_MAP[_event_type]
     raise "event handler is unknown: #{_event_type.inspect}" unless event_type
@@ -41,15 +41,15 @@ class FQuery
     raise ":disconnect handler must not accept any arguments" if _disconnect_block && _disconnect_block.arity != 1
     disconnect_block = nil
     if _disconnect_block
-      disconnect_inner_block = RMExtensions.safe_block(_disconnect_block)
+      disconnect_inner_block = RMX.safe_block(_disconnect_block)
       disconnect_block = lambda do |err|
         disconnect_inner_block.call(err)
       end.weak!
     end
     handler = nil
     if and_then.arity == 1
-      inner_block = RMExtensions.safe_block(lambda do |snap|
-        datasnap = FirebaseExt::DataSnapshot.new(snap)
+      inner_block = RMX.safe_block(lambda do |snap|
+        datasnap = RMXFirebaseDataSnapshot.new(snap)
         completion.call(datasnap)
       end)
       wrapped_block = lambda do |snap|
@@ -57,28 +57,28 @@ class FQuery
       end.weak!
       if disconnect_block
         if options[:once]
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeSingleEventOfType(event_type, withBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         else
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeEventType(event_type, withBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         end
       else
         if options[:once]
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeSingleEventOfType(event_type, withBlock:wrapped_block)
           end
         else
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeEventType(event_type, withBlock:wrapped_block)
           end
         end
       end
     else
-      inner_block = RMExtensions.safe_block(lambda do |snap, prev|
-        datasnap = FirebaseExt::DataSnapshot.new(snap)
+      inner_block = RMX.safe_block(lambda do |snap, prev|
+        datasnap = RMXFirebaseDataSnapshot.new(snap)
         completion.call(datasnap, prev)
       end)
       wrapped_block = lambda do |snap, prev|
@@ -86,21 +86,21 @@ class FQuery
       end.weak!
       if disconnect_block
         if options[:once]
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeSingleEventOfType(event_type, andPreviousSiblingNameWithBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         else
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeEventType(event_type, andPreviousSiblingNameWithBlock:wrapped_block, withCancelBlock:disconnect_block)
           end
         end
       else
         if options[:once]
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeSingleEventOfType(event_type, andPreviousSiblingNameWithBlock:wrapped_block)
           end
         else
-          Firebase.dispatchQueue.sync do
+          RMXFirebase::INTERNAL_QUEUE.sync do
             handler = observeEventType(event_type, andPreviousSiblingNameWithBlock:wrapped_block)
           end
         end
@@ -115,7 +115,7 @@ class FQuery
 
   class OutstandingHandlers
 
-    rmext_weak_attr_accessor :scope
+    RMX(self).weak_attr_accessor :scope
 
     def initialize(_scope)
       self.scope = _scope
@@ -133,8 +133,8 @@ class FQuery
     def off(handle=nil)
       if s = scope
         if _handle = @handlers.delete(handle)
-          # p s.rmext_object_desc, "remove handle", _handle
-          Firebase.dispatchQueue.sync do
+          # p s.rmx_object_desc, "remove handle", _handle
+          RMXFirebase::INTERNAL_QUEUE.sync do
             s.removeObserverWithHandle(_handle)
           end
         else
@@ -165,7 +165,7 @@ class FQuery
   end
 
   def off(handle)
-    FirebaseExt::QUEUE.barrier_async do
+    RMXFirebase::QUEUE.barrier_async do
       _off(handle)
     end
     self

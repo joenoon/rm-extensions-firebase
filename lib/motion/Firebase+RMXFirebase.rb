@@ -1,10 +1,8 @@
 class Firebase
 
-  DEBUG_SETVALUE = RMExtensions::Env['rmext_firebase_debug_setvalue'] == '1'
+  DEBUG_SETVALUE = RMX::Env['rmx_firebase_debug_setvalue'] == '1'
 
-  INTERNAL_QUEUE = Dispatch::Queue.new("FirebaseExt.internal")
-
-  def rmext_object_desc
+  def rmx_object_desc
     "#{super}:#{description}"
   end
 
@@ -28,7 +26,7 @@ class Firebase
     queryEndingAtPriority(priority)
   end
 
-  def rmext_arrayToHash(array)
+  def rmx_arrayToHash(array)
     hash = {}
     array.each_with_index do |item, i|
       hash[i.to_s] = item
@@ -36,7 +34,7 @@ class Firebase
     hash
   end
 
-  def rmext_castValue(value, key=nil)
+  def rmx_castValue(value, key=nil)
     if value == true
     elsif value == false
     elsif value.is_a?(NSString)
@@ -45,13 +43,13 @@ class Firebase
       p "FIREBASE_BAD_TYPE FIXED NIL: #{File.join(*[ description, key ].compact.map(&:to_s))}", "!"
       value = {}
     elsif value.is_a?(Array)
-      value = rmext_arrayToHash(value)
+      value = rmx_arrayToHash(value)
       p "FIREBASE_BAD_TYPE FIXED ARRAY: #{File.join(*[ description, key ].compact.map(&:to_s))}: #{value.inspect} (type: #{value.className.to_s})", "!"
     elsif value.is_a?(NSDictionary)
       _value = value.dup
       new_value = {}
       _value.keys.each do |k|
-        new_value[k.to_s] = rmext_castValue(_value[k], k)
+        new_value[k.to_s] = rmx_castValue(_value[k], k)
       end
       value = new_value
     else
@@ -61,16 +59,16 @@ class Firebase
     value
   end
 
-  def rmext_setValue(value, andPriority:priority)
-    # value = rmext_castValue(value)
+  def rmx_setValue(value, andPriority:priority)
+    # value = rmx_castValue(value)
     setValue(value, andPriority:priority)
   end
-  def rmext_setValue(value)
-    # value = rmext_castValue(value)
+  def rmx_setValue(value)
+    # value = rmx_castValue(value)
     setValue(value)
   end
-  def rmext_onDisconnectSetValue(value)
-    value = rmext_castValue(value)
+  def rmx_onDisconnectSetValue(value)
+    value = rmx_castValue(value)
     onDisconnectSetValue(value)
   end
 
@@ -81,21 +79,15 @@ class Firebase
     if DEBUG_SETVALUE
       p description, "setValue:andPriority", value, priority
     end
-    value = rmext_castValue(value)
+    value = rmx_castValue(value)
     orig_setValueAndPriority(value, priority)
   end
   def setValue(value)
     if DEBUG_SETVALUE
       p description, "setValue:", value
     end
-    value = rmext_castValue(value)
+    value = rmx_castValue(value)
     orig_setValue(value)
   end
 
-  def self.dispatchQueue
-    INTERNAL_QUEUE
-  end
-
 end
-
-Firebase.setDispatchQueue(Firebase::INTERNAL_QUEUE.dispatch_object)

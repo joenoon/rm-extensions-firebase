@@ -1,10 +1,10 @@
-module FirebaseExt
+module RMXFirebase
 
-  QUEUE = Dispatch::Queue.new("FirebaseExt")
+  QUEUE = Dispatch::Queue.new("RMXFirebase")
+  INTERNAL_QUEUE = Dispatch::Queue.new("RMXFirebase.internal")
 
-  DEBUG_IDENTITY_MAP = RMExtensions::Env['rmext_firebase_debug_identity_map'] == '1'
-  DEBUG_MODEL_DEALLOC = RMExtensions::Env['rmext_firebase_debug_model_dealloc'] == '1'
-  DEBUG_FIREBASE_TIMING = RMExtensions::Env['rmext_firebase_debug_timing'] == '1'
+  DEBUG_IDENTITY_MAP = RMX::Env['rmx_firebase_debug_identity_map'] == '1'
+  DEBUG_MODEL_DEALLOC = RMX::Env['rmx_firebase_debug_model_dealloc'] == '1'
 
   def self.queue_for(queueish)
     if queueish == :main || queueish.nil?
@@ -28,3 +28,4 @@ module FirebaseExt
   end
 
 end
+Firebase.setDispatchQueue(RMXFirebase::INTERNAL_QUEUE.dispatch_object)

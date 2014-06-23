@@ -4,13 +4,13 @@ class Bacon::Context
       collection.once do |snaps|
         snap_names = snaps.map(&:name)
         puts "snap_names: #{snap_names.inspect}\n\n"
-        rmext_block_on_main_q(block, snap_names)
+        RMX.block_on_main_q(block, snap_names)
       end
     end
   end
 end
 
-describe "FirebaseExt::Collection" do
+describe "RMXFirebaseCollection" do
 
   before do
     Firebase.goOffline
@@ -49,7 +49,7 @@ describe "FirebaseExt::Collection" do
   describe "a collection" do
 
     before do
-      @col = FirebaseExt::Collection.new(@ref)
+      @col = RMXFirebaseCollection.new(@ref)
       @ref.setValue({})
       @letters.each_pair do |k, pri|
         p "SET", k, pri
