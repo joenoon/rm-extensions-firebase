@@ -5,7 +5,7 @@ unless defined?(Motion::Project::Config)
 end
 
 Motion::Project::App.setup do |app|
-  index = app.files.rindex { |x| x.index("RMX") == 0 }
+  index = app.files.rindex { |x| x.index("/RMX") }
   %w(
     Firebase+RMXFirebase
     FQuery+RMXFirebase
