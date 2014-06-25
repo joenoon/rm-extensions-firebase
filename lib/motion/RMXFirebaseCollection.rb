@@ -2,7 +2,7 @@ class RMXFirebaseCollection
 
   include RMXCommonMethods
 
-  attr_reader :ref, :snaps
+  attr_reader :ref, :snaps, :transformations_table
 
   # public
   def ready?
