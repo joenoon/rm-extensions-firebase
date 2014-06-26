@@ -122,37 +122,37 @@ class RMXFirebaseCollection
   def setup_ref(_ref)
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     _clear_current_ref!
-    @ref = _ref
     @ready = false
     @cancelled = false
     cancel_block = lambda do |err|
       @cancelled = err
       cancelled!
     end
-    @added_handler = @ref.on(:added) do |snap, prev|
+    @added_handler = _ref.on(:added) do |snap, prev|
       # p "NORMAL ", snap.name, prev
       RMXFirebase::QUEUE.barrier_async do
         # p "BARRIER", snap.name, prev
         add(snap, prev)
       end
     end
-    @removed_handler = @ref.on(:removed) do |snap|
+    @removed_handler = _ref.on(:removed) do |snap|
       RMXFirebase::QUEUE.barrier_async do
         remove(snap)
       end
     end
-    @moved_handler = @ref.on(:moved) do |snap, prev|
+    @moved_handler = _ref.on(:moved) do |snap, prev|
       RMXFirebase::QUEUE.barrier_async do
         add(snap, prev)
       end
     end
-    @value_handler = @ref.once(:value, { :disconnect => cancel_block }) do |collection|
+    @value_handler = _ref.once(:value, { :disconnect => cancel_block }) do |collection|
       @value_handler = nil
       RMXFirebase::QUEUE.barrier_async do
         ready!
       end
     end
     RMX(self).on(:cancelled, :exclusive => [ :ready, :finished, :changed, :added, :removed, :moved ], :queue => :async)
+    @ref = _ref
   end
 
   def refresh_order!
@@ -192,24 +192,23 @@ class RMXFirebaseCollection
   end
 
   def _clear_current_ref!
-    if @ref
+    if _ref = @ref
       if @added_handler
-        @ref.off(@added_handler)
+        _ref.off(@added_handler)
         @added_handler = nil
       end
       if @removed_handler
-        @ref.off(@removed_handler)
+        _ref.off(@removed_handler)
         @removed_handler = nil
       end
       if @moved_handler
-        @ref.off(@moved_handler)
+        _ref.off(@moved_handler)
         @moved_handler = nil
       end
       if @value_handler
-        @ref.off(@value_handler)
+        _ref.off(@value_handler)
         @value_handler = nil
       end
-      @ref = nil
     end
   end
 
