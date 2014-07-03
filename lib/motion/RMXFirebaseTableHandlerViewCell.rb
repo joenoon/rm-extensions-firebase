@@ -1,4 +1,4 @@
-class RMXFirebaseTableViewCell < RMXTableViewCell
+class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
 
   extend RMXFirebaseHandleModel
 
@@ -34,6 +34,14 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
       end
     end
     @model
+  end
+
+  def data
+    model
+  end
+
+  def data=(data)
+    self.model = data
   end
 
 end

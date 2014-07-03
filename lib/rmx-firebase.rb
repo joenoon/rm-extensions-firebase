@@ -18,6 +18,7 @@ Motion::Project::App.setup do |app|
     RMXFirebaseCollection
     RMXFirebaseHandleModel
     RMXFirebaseTableViewCell
+    RMXFirebaseTableHandlerViewCell
     RMXFirebaseView
     RMXFirebaseViewController
   ).each_with_index do |x, i|
