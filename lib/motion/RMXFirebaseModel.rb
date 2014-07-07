@@ -6,19 +6,12 @@ class RMXFirebaseModel
 
   attr_reader :api, :root
 
-  def self.new(opts=nil)
-    x = super
-    RMXFirebase::QUEUE.barrier_async do
-      x.internal_setup
-    end
-    x
-  end
-
   def initialize(opts=nil)
     @opts = opts
     @dependencies_cancelled = {}
     @dependencies_ready = {}
     @dependencies = {}
+    internal_setup
   end
 
   def dealloc
@@ -62,14 +55,15 @@ class RMXFirebaseModel
   end
 
   def internal_setup
-    RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     @api = RMXFirebaseCoordinator.new
-    RMX(@api).on(:finished, :queue => RMXFirebase::QUEUE) do
-      RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
-      check_ready
+    RMXFirebase::QUEUE.barrier_async do
+      RMX(@api).on(:finished, :queue => RMXFirebase::QUEUE) do
+        RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
+        check_ready
+      end
+      RMX(self).on(:cancelled, :exclusive => [ :ready, :finished ], :queue => :async)
+      setup
     end
-    RMX(self).on(:cancelled, :exclusive => [ :ready, :finished ], :queue => :async)
-    setup
   end
 
   def check_ready

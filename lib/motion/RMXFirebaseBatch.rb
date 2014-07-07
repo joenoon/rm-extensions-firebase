@@ -2,58 +2,50 @@ class RMXFirebaseBatch
 
   include RMXCommonMethods
 
-  def self.new(*models)
-    _models = models.dup
-    _models = _models.flatten.compact
-    x = super()
-    RMXFirebase::QUEUE.barrier_async do
-      x.setup_models(_models)
-    end
-    x
-  end
-
-  def initialize
+  def initialize(*the_models)
     @models = []
     @ready_models = []
     @complete_blocks = {}
+    setup_models(the_models)
   end
 
   def setup_models(the_models)
-    RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     @ready = false
-    @models = the_models.dup
+    @models = the_models.dup.flatten.compact
     @ready_count = 0
     @pending_count = @models.size
-    if @models.any?
+    RMXFirebase::QUEUE.barrier_async do
       _models = @models.dup
-      _pairs = []
-      i = 0
-      while _models.size > 0
-        ii = i # strange: proc doesnt seem to close over i correctly
-        model = _models.shift
-        blk = proc do
-          RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
-          # p "COMPLETE!", ii, model
-          @complete_blocks.delete(model)
-          @ready_models[ii] = model
-          @ready_count += 1
-          @pending_count -= 1
-          if @pending_count == 0
-            ready!
+      if _models.any?
+        _pairs = []
+        i = 0
+        while _models.size > 0
+          ii = i # strange: proc doesnt seem to close over i correctly
+          model = _models.shift
+          blk = proc do
+            RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
+            # p "COMPLETE!", ii, model
+            @complete_blocks.delete(model)
+            @ready_models[ii] = model
+            @ready_count += 1
+            @pending_count -= 1
+            if @pending_count == 0
+              ready!
+            end
+          end
+          @complete_blocks[model] = blk
+          _pairs << [ model, blk ]
+          i += 1
+        end
+        RMXFirebase::QUEUE.barrier_async do
+          while pair = _pairs.shift
+            pair[0].once(RMXFirebase::QUEUE, &pair[1])
           end
         end
-        @complete_blocks[model] = blk
-        _pairs << [ model, blk ]
-        i += 1
-      end
-      RMXFirebase::QUEUE.barrier_async do
-        while pair = _pairs.shift
-          pair[0].once(RMXFirebase::QUEUE, &pair[1])
+      else
+        RMXFirebase::QUEUE.barrier_async do
+          ready!
         end
-      end
-    else
-      RMXFirebase::QUEUE.barrier_async do
-        ready!
       end
     end
   end

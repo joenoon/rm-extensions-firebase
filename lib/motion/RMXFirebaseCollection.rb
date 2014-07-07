@@ -29,11 +29,13 @@ class RMXFirebaseCollection
 
   # public, completes with ready transformations
   def transformed(queue=nil, &block)
-    items = @transformations.dup
-    if (snap = items.first) && snap.is_a?(RMXFirebaseModel)
-      RMXFirebaseBatch.new(items).once(queue, &block)
-    else
-      RMXFirebase.block_on_queue(queue, items, &block)
+    RMXFirebase::QUEUE.barrier_async do
+      items = @transformations.dup
+      if (snap = items.first) && snap.is_a?(RMXFirebaseModel)
+        RMXFirebaseBatch.new(items).once(queue, &block)
+      else
+        RMXFirebase.block_on_queue(queue, items, &block)
+      end
     end
     self
   end
@@ -102,93 +104,52 @@ class RMXFirebaseCollection
     RMX(self).on(:moved, :queue => queue, &block)
   end
 
-  def self.new(ref)
-    x = super()
-    RMXFirebase::QUEUE.barrier_async do
-      x.setup_ref(ref)
-    end
-    x
-  end
-
-  # internal
-  def initialize
+  def initialize(_ref)
     @snaps_by_name = {}
     @snaps = []
     @transformations_table = {}
     @transformations = []
+    @added_handler = nil
+    @removed_handler = nil
+    @moved_handler = nil
+    @value_handler = nil
+    setup_ref(_ref)
   end
 
   # internal
   def setup_ref(_ref)
-    RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     _clear_current_ref!
-    @ready = false
-    @cancelled = false
-    cancel_block = lambda do |err|
-      @cancelled = err
-      cancelled!
-    end
-    @added_handler = _ref.on(:added) do |snap, prev|
-      # p "NORMAL ", snap.name, prev
-      RMXFirebase::QUEUE.barrier_async do
-        # p "BARRIER", snap.name, prev
-        add(snap, prev)
-      end
-    end
-    @removed_handler = _ref.on(:removed) do |snap|
-      RMXFirebase::QUEUE.barrier_async do
-        remove(snap)
-      end
-    end
-    @moved_handler = _ref.on(:moved) do |snap, prev|
-      RMXFirebase::QUEUE.barrier_async do
-        add(snap, prev)
-      end
-    end
-    @value_handler = _ref.once(:value, { :disconnect => cancel_block }) do |collection|
-      @value_handler = nil
-      RMXFirebase::QUEUE.barrier_async do
-        ready!
-      end
-    end
-    RMX(self).on(:cancelled, :exclusive => [ :ready, :finished, :changed, :added, :removed, :moved ], :queue => :async)
     @ref = _ref
-  end
-
-  def refresh_order!
     RMXFirebase::QUEUE.barrier_async do
-      next unless @ref
-      if @added_handler
-        @ref.off(@added_handler)
-        @added_handler = nil
+      cancel_block = lambda do |err|
+        @cancelled = err
+        cancelled!
       end
-      @added_handler = @ref.on(:added) do |snap, prev|
+      @added_handler = _ref.on(:added) do |snap, prev|
         # p "NORMAL ", snap.name, prev
         RMXFirebase::QUEUE.barrier_async do
           # p "BARRIER", snap.name, prev
           add(snap, prev)
         end
       end
-    end
-  end
-
-  # mess up the order on purpose
-  def _test_scatter!
-    RMXFirebase::QUEUE.barrier_async do
-      _snaps = @snaps.dup
-      p "before scatter", @snaps.map(&:name)
-      p "before scatter snaps_by_name", @snaps_by_name
-
-      _snaps.each do |snap|
-        others = _snaps - [ snap ]
-        random = others.sample
-        add(snap, random.name)
+      @removed_handler = _ref.on(:removed) do |snap|
+        RMXFirebase::QUEUE.barrier_async do
+          remove(snap)
+        end
       end
+      @moved_handler = _ref.on(:moved) do |snap, prev|
+        RMXFirebase::QUEUE.barrier_async do
+          add(snap, prev)
+        end
+      end
+      @value_handler = _ref.once(:value, { :disconnect => cancel_block }) do |collection|
+        @value_handler = nil
+        RMXFirebase::QUEUE.barrier_async do
+          ready!
+        end
+      end
+      RMX(self).on(:cancelled, :exclusive => [ :ready, :finished, :changed, :added, :removed, :moved ], :queue => :async)
     end
-  end
-
-  def rmx_dealloc
-    _clear_current_ref!
   end
 
   def _clear_current_ref!
@@ -210,8 +171,9 @@ class RMXFirebaseCollection
         @value_handler = nil
       end
     end
+    @ready = false
+    @cancelled = false
   end
-
 
   # internal
   def ready!
@@ -246,20 +208,6 @@ class RMXFirebaseCollection
   def store_transform(snap)
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     @transformations_table[snap] ||= transform(snap)
-  end
-
-  def _log_snap_names
-    RMXFirebase::QUEUE.barrier_async do
-      puts "snaps_by_name:"
-      _log_hash(@snaps_by_name)
-    end
-  end
-
-
-  def _log_hash(hash)
-    hash.to_a.sort_by { |x| x[1] }.each do |pair|
-      puts pair.inspect
-    end
   end
 
   # internal
