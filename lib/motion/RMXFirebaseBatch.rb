@@ -3,6 +3,7 @@ class RMXFirebaseBatch
   include RMXCommonMethods
 
   def initialize(*the_models)
+    @state = nil
     @models = []
     @ready_models = []
     @complete_blocks = {}
@@ -10,7 +11,6 @@ class RMXFirebaseBatch
   end
 
   def setup_models(the_models)
-    @ready = false
     @models = the_models.dup.flatten.compact
     @ready_count = 0
     @pending_count = @models.size
@@ -26,7 +26,9 @@ class RMXFirebaseBatch
             RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
             # p "COMPLETE!", ii, model
             @complete_blocks.delete(model)
-            @ready_models[ii] = model
+            if model.ready?
+              @ready_models[ii] = model
+            end
             @ready_count += 1
             @pending_count -= 1
             if @pending_count == 0
@@ -39,7 +41,7 @@ class RMXFirebaseBatch
         end
         RMXFirebase::QUEUE.barrier_async do
           while pair = _pairs.shift
-            pair[0].once(RMXFirebase::QUEUE, &pair[1])
+            pair[0].once_ready_or_cancelled(RMXFirebase::QUEUE, &pair[1])
           end
         end
       else
@@ -52,10 +54,10 @@ class RMXFirebaseBatch
 
   def ready!
     RMXFirebase::QUEUE.barrier_async do
-      @ready = true
+      @state = :ready
       # p "models", models.dup
       # p "ready_models", ready_models.dup
-      RMX(self).trigger(:ready, @ready_models.dup)
+      RMX(self).trigger(:ready, @ready_models.compact)
     end
   end
 
@@ -73,7 +75,7 @@ class RMXFirebaseBatch
   end
 
   def ready?
-    !!@ready
+    @state == :ready
   end
 
   def once(queue=nil, &block)

@@ -3,6 +3,9 @@ class RMXFirebaseListener
   include RMXCommonMethods
 
   attr_accessor :snapshot, :ref, :callback, :handle, :value_required
+
+  attr_reader :cancel_error
+
   RMX(self).weak_attr_accessor :callback_owner
 
   def rmx_dealloc
@@ -12,17 +15,19 @@ class RMXFirebaseListener
   end
 
   def ready?
-    !!@ready
+    @state == :ready
   end
 
   def cancelled?
-    !!@cancelled
+    @state == :cancelled
   end
 
   def start!
+    @state = nil
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     cancel_block = lambda do |err|
-      @cancelled = err
+      @state = :cancelled
+      @cancel_error = err
       RMX(self).trigger(:cancelled, self)
       RMX(self).trigger(:finished, self)
     end
@@ -35,7 +40,7 @@ class RMXFirebaseListener
           }))
         else
           callback.call(snap) if callback && callback_owner
-          @ready = true
+          @state = :ready
           RMX(self).trigger(:ready, self)
           RMX(self).trigger(:finished, self)
           # p "ready__"
@@ -46,8 +51,7 @@ class RMXFirebaseListener
 
   def stop!
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
-    @cancelled = false
-    @ready = false
+    @state = nil
     if ref && handle
       ref.off(handle)
     end

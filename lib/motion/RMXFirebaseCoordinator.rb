@@ -6,12 +6,13 @@ class RMXFirebaseCoordinator
 
   def initialize
     @watches = {}
+    @state = nil
+
   end
 
   def clear!
     RMXFirebase::QUEUE.barrier_async do
-      @cancelled = false
-      @ready = false
+      @state = nil
       keys = watches.keys.dup
       while keys.size > 0
         name = keys.shift
@@ -24,16 +25,17 @@ class RMXFirebaseCoordinator
   end
 
   def ready?
-    !!@ready
+    @state == :ready
   end
 
   def cancelled?
-    !!@cancelled
+    @state == :cancelled
   end
 
   def ready!
     RMXFirebase::QUEUE.barrier_async do
-      @ready = true
+      # p "ready!"
+      @state = :ready
       RMX(self).trigger(:ready, self)
       RMX(self).trigger(:finished, self)
     end
@@ -41,7 +43,8 @@ class RMXFirebaseCoordinator
 
   def cancelled!
     RMXFirebase::QUEUE.barrier_async do
-      @cancelled = true
+      # p "cancelled!"
+      @state = :cancelled
       RMX(self).trigger(:cancelled, self)
       RMX(self).trigger(:finished, self)
     end

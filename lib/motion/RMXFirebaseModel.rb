@@ -22,11 +22,11 @@ class RMXFirebaseModel
   end
 
   def ready?
-    !!@ready
+    @state == :ready
   end
 
   def cancelled?
-    !!@cancelled
+    @state == :cancelled
   end
 
   def finished?
@@ -35,8 +35,8 @@ class RMXFirebaseModel
 
   def ready!
     RMXFirebase::QUEUE.barrier_async do
-      # p "ready!"
-      @ready = true
+      # p "ready!", toValue
+      @state = :ready
       RMX(self).trigger(:ready, self)
       RMX(self).trigger(:finished, self)
     end
@@ -44,7 +44,8 @@ class RMXFirebaseModel
 
   def cancelled!
     RMXFirebase::QUEUE.barrier_async do
-      @cancelled = true
+      # p "cancelled!", toValue
+      @state = :cancelled
       RMX(self).trigger(:cancelled, self)
       RMX(self).trigger(:finished, self)
     end
@@ -133,10 +134,22 @@ class RMXFirebaseModel
 
   def once(queue=nil, &block)
     RMXFirebase::QUEUE.barrier_async do
+      if ready?
+        RMXFirebase.block_on_queue(queue, self, &block)
+      else
+        RMX(self).once(:ready, :strong => true, :queue => queue, &block)
+      end
+    end
+    self
+  end
+
+  def once_ready_or_cancelled(queue=nil, &block)
+    RMXFirebase::QUEUE.barrier_async do
       if ready? || cancelled?
         RMXFirebase.block_on_queue(queue, self, &block)
       else
         RMX(self).once(:ready, :strong => true, :queue => queue, &block)
+        RMX(self).once(:cancelled, :strong => true, :queue => queue, &block)
       end
     end
     self

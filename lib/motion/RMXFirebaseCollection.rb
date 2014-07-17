@@ -2,16 +2,16 @@ class RMXFirebaseCollection
 
   include RMXCommonMethods
 
-  attr_reader :ref, :snaps, :transformations_table
+  attr_reader :ref, :snaps, :transformations_table, :cancel_error
 
   # public
   def ready?
-    !!@ready
+    @state == :ready
   end
 
   # public
   def cancelled?
-    !!@cancelled
+    @state == :cancelled
   end
 
   # overridable
@@ -113,6 +113,7 @@ class RMXFirebaseCollection
     @removed_handler = nil
     @moved_handler = nil
     @value_handler = nil
+    @cancel_error = nil
     setup_ref(_ref)
   end
 
@@ -122,7 +123,7 @@ class RMXFirebaseCollection
     @ref = _ref
     RMXFirebase::QUEUE.barrier_async do
       cancel_block = lambda do |err|
-        @cancelled = err
+        @cancel_error = err
         cancelled!
       end
       @added_handler = _ref.on(:added) do |snap, prev|
@@ -171,14 +172,13 @@ class RMXFirebaseCollection
         @value_handler = nil
       end
     end
-    @ready = false
-    @cancelled = false
+    @state = nil
   end
 
   # internal
   def ready!
     RMXFirebase::QUEUE.barrier_async do
-      @ready = true
+      @state = :ready
       RMX(self).trigger(:ready, self)
       RMX(self).trigger(:changed, self)
       RMX(self).trigger(:finished, self)
@@ -188,7 +188,7 @@ class RMXFirebaseCollection
   # internal
   def cancelled!
     RMXFirebase::QUEUE.barrier_async do
-      @cancelled = true
+      @state = :cancelled
       RMX(self).trigger(:cancelled, self)
       RMX(self).trigger(:finished, self)
     end
