@@ -2,7 +2,7 @@ class RMXFirebaseCollection
 
   include RMXCommonMethods
 
-  attr_reader :ref, :snaps, :transformations_table, :cancel_error
+  attr_reader :ref, :snaps, :transformations, :transformations_table, :cancel_error
 
   # public
   def ready?
