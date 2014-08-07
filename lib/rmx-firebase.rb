@@ -16,6 +16,7 @@ Motion::Project::App.setup do |app|
     RMXFirebaseModel
     RMXFirebaseBatch
     RMXFirebaseCollection
+    RMXFirebaseCollectionPager
     RMXFirebaseHandleModel
     RMXFirebaseTableViewCell
     RMXFirebaseTableHandlerViewCell
