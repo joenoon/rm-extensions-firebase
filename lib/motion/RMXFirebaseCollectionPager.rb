@@ -74,12 +74,12 @@ class RMXFirebaseCollectionPager
 
   # public
   def ready?
-    @collections.all? { |x| x.ready? }
+    @collections.any? && @collections.all? { |x| x.ready? }
   end
 
   # public
   def cancelled?
-    @collections.any? { |x| x.cancelled? }
+    @collections.any? && @collections.any? { |x| x.cancelled? }
   end
 
   def transform(snap)
