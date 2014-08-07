@@ -18,12 +18,20 @@ class Firebase
     queryLimitedToNumberOfChildren(limit)
   end
 
-  def starting_at(priority)
-    queryStartingAtPriority(priority)
+  def starting_at(priority, child_name=nil)
+    if child_name
+      queryStartingAtPriority(priority, andChildName:child_name)
+    else
+      queryStartingAtPriority(priority)
+    end
   end
 
-  def ending_at(priority)
-    queryEndingAtPriority(priority)
+  def ending_at(priority, child_name=nil)
+    if child_name
+      queryEndingAtPriority(priority, andChildName:child_name)
+    else
+      queryEndingAtPriority(priority)
+    end
   end
 
   def rmx_arrayToHash(array)
