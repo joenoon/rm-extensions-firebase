@@ -41,7 +41,7 @@ class RMXFirebaseBatch
         end
         RMXFirebase::QUEUE.barrier_async do
           while pair = _pairs.shift
-            pair[0].once_ready_or_cancelled(RMXFirebase::QUEUE, &pair[1])
+            pair[0].once_finished(RMXFirebase::QUEUE, &pair[1])
           end
         end
       else
