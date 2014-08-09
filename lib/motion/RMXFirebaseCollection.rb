@@ -114,6 +114,9 @@ class RMXFirebaseCollection
     @moved_handler = nil
     @value_handler = nil
     @cancel_error = nil
+    @ref = nil
+    @root = nil
+    @once_done = nil
     setup_ref(_ref)
   end
 
@@ -121,6 +124,7 @@ class RMXFirebaseCollection
   def setup_ref(_ref)
     _clear_current_ref!
     @ref = _ref
+    @root = Firebase.alloc.initWithRepo(_ref.repo, andPath:_ref.path)
     RMXFirebase::QUEUE.barrier_async do
       cancel_block = lambda do |err|
         @cancel_error = err
@@ -143,45 +147,47 @@ class RMXFirebaseCollection
           add(snap, prev)
         end
       end
-      @value_handler = _ref.once(:value, { :disconnect => cancel_block }) do |collection|
-        @value_handler = nil
+      @value_handler = @root.on(:value, { :disconnect => cancel_block }) do |collection|
         RMXFirebase::QUEUE.barrier_async do
-          ready!
+          @once_done ||= begin
+            ready!
+            true
+          end
         end
       end
-      RMX(self).on(:cancelled, :exclusive => [ :ready, :finished, :changed, :added, :removed, :moved ], :queue => :async)
+      RMX(self).on(:cancelled, :exclusive => [ :ready, :changed, :added, :removed, :moved ], :queue => :async)
     end
   end
 
   def _clear_current_ref!
-    if _ref = @ref
-      if @added_handler
-        _ref.off(@added_handler)
-        @added_handler = nil
-      end
-      if @removed_handler
-        _ref.off(@removed_handler)
-        @removed_handler = nil
-      end
-      if @moved_handler
-        _ref.off(@moved_handler)
-        @moved_handler = nil
-      end
-      if @value_handler
-        _ref.off(@value_handler)
-        @value_handler = nil
-      end
+    # p "_clear_current_ref"
+    if @added_handler
+      @ref.off(@added_handler)
+      @added_handler = nil
     end
+    if @removed_handler
+      @ref.off(@removed_handler)
+      @removed_handler = nil
+    end
+    if @moved_handler
+      @ref.off(@moved_handler)
+      @moved_handler = nil
+    end
+    if @value_handler
+      @root.off(@value_handler)
+      @value_handler = nil
+    end
+    @ref = nil
+    @root = nil
     @state = nil
+    @once_done = nil
   end
 
   # internal
   def ready!
     RMXFirebase::QUEUE.barrier_async do
       @state = :ready
-      RMX(self).trigger(:ready, self)
-      RMX(self).trigger(:changed, self)
-      RMX(self).trigger(:finished, self)
+      changed!
     end
   end
 
@@ -191,6 +197,17 @@ class RMXFirebaseCollection
       @state = :cancelled
       RMX(self).trigger(:cancelled, self)
       RMX(self).trigger(:finished, self)
+    end
+  end
+
+  # internal
+  def changed!
+    RMXFirebase::QUEUE.barrier_async do
+      RMX(self).trigger(:changed, self)
+      if ready?
+        RMX(self).trigger(:ready, self)
+        RMX(self).trigger(:finished, self)
+      end
     end
   end
 
@@ -207,7 +224,13 @@ class RMXFirebaseCollection
   # internal
   def store_transform(snap)
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
-    @transformations_table[snap] ||= transform(snap)
+    @transformations_table[snap] ||= begin
+      model = transform(snap)
+      RMX(model).on(:cancelled, :queue => :async) do
+        changed!
+      end
+      model
+    end
   end
 
   # internal
@@ -262,11 +285,7 @@ class RMXFirebaseCollection
     else
       RMX(self).trigger(:added, self, snap, prev)
     end
-    RMX(self).trigger(:changed, self)
-    if ready?
-      RMX(self).trigger(:ready, self)
-      RMX(self).trigger(:finished, self)
-    end
+    changed!
   end
 
   # internal
@@ -281,11 +300,7 @@ class RMXFirebaseCollection
         end
       end
       RMX(self).trigger(:removed, self, snap)
-      RMX(self).trigger(:changed, self)
-      if ready?
-        RMX(self).trigger(:ready, self)
-        RMX(self).trigger(:finished, self)
-      end
+      changed!
     end
   end
 

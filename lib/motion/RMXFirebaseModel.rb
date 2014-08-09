@@ -62,7 +62,7 @@ class RMXFirebaseModel
         RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
         check_ready
       end
-      RMX(self).on(:cancelled, :exclusive => [ :ready, :finished ], :queue => :async)
+      RMX(self).on(:cancelled, :exclusive => [ :ready ], :queue => :async)
       setup
     end
   end

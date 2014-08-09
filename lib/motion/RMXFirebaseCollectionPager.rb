@@ -206,16 +206,8 @@ class RMXFirebaseCollectionPager
 
   def sort_collections!
     @collections.sort_by! do |collection|
-      first_snap_pri = if first_snap = collection.snaps.first
-        first_snap.priority
-      else
-        0
-      end
-      last_snap_pri = if last_snap = collection.snaps.last
-        last_snap.priority
-      else
-        0
-      end
+      first_snap_pri = collection.snaps.first && collection.snaps.first.priority || 0
+      last_snap_pri = collection.snaps.last && collection.snaps.last.priority || 0
       [ first_snap_pri, last_snap_pri ]
     end
   end
