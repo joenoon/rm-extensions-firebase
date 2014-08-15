@@ -8,6 +8,9 @@ class RMXFirebaseView < RMXView
   def changed
   end
 
+  def pending
+  end
+
   def model
     @model
   end
@@ -21,15 +24,9 @@ class RMXFirebaseView < RMXView
     @model = val
     reset
     if @model
-      unless @model.ready?
-        raise "#{className} tried to use a model that is not ready: #{@model.rmx_object_desc}"
-      end
       @model_unbinder = @model.always do |m|
-        unless m == @model
-          p "model.always", "m", m, "@model", @model
-        end
         next unless m == @model
-        changed
+        m.ready? ? changed : pending
       end
     end
     @model

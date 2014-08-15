@@ -14,6 +14,9 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
   def changed
   end
 
+  def pending
+  end
+
   def model
     @model
   end
@@ -22,12 +25,9 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
     return @model if val == @model
     @model = val
     if @model
-      unless @model.ready?
-        raise "#{className} tried to use a model that is not ready: #{@model.inspect}"
-      end
       @model_unbinder = @model.always do |m|
         next unless m == @model
-        changed
+        m.ready? ? changed : pending
       end
     end
     @model

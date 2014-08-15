@@ -73,7 +73,7 @@ class RMXFirebaseModel
     # p "check_ready ready?", @api.ready?, dependencies_ready.size, dependencies.size
     if @api.cancelled? || @dependencies_cancelled.size > 0
       cancelled!
-    elsif @api.ready? && @dependencies_ready.size == @dependencies.size
+    elsif @api.ready? && @dependencies.values.all? { |x| @dependencies_ready[x] }
       ready!
     end
   end
@@ -118,10 +118,6 @@ class RMXFirebaseModel
       @dependencies_cancelled[model] = true
       @dependencies_ready.delete(model)
     end
-  end
-
-  def always_async(&block)
-    always(:async, &block)
   end
 
   def always(queue=nil, &block)

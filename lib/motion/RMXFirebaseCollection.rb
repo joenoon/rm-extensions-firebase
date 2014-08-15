@@ -2,7 +2,7 @@ class RMXFirebaseCollection
 
   include RMXCommonMethods
 
-  attr_reader :ref, :snaps, :transformations, :transformations_table, :cancel_error
+  attr_reader :ref, :snaps, :transformations_table, :cancel_error
 
   # public
   def ready?
@@ -14,13 +14,9 @@ class RMXFirebaseCollection
     @state == :cancelled
   end
 
-  # overridable
+  # overridable, by default just returns the snap
   def transform(snap)
-    if block = @transform_block
-      block.call(snap)
-    else
-      snap
-    end
+    snap
   end
 
   def transformed_async(&block)
@@ -29,8 +25,59 @@ class RMXFirebaseCollection
 
   # public, completes with ready transformations
   def transformed(queue=nil, &block)
+    transformed(queue, nil, &block)
+  end
+
+  # public, completes with ready transformations
+  def transformed(queue=nil, pager=nil, &block)
     RMXFirebase::QUEUE.barrier_async do
-      items = @transformations.dup
+      starting_at = pager && pager.starting_at
+      ending_at = pager && pager.ending_at
+      limit = pager && pager.limit
+      order = pager && pager.order
+      items = []
+      first = nil
+      last = nil
+      max_index = @snaps.size - 1
+      if starting_at
+        if first = @snaps.index { |x|
+          begin
+            x.priority >= starting_at
+          rescue => e
+            p "x.priority: #{x.priority.inspect}, starting_at: #{starting_at.inspect}, e: #{e.inspect}"
+          end
+        }
+          last = first + limit
+          last = max_index if last > max_index
+        end
+      elsif ending_at
+        if last = @snaps.rindex { |x| x.priority <= ending_at }
+          first = last - limit
+          first = 0 if first < 0
+        end
+      else
+        last = @snaps.size - 1
+        if last > -1
+          if limit
+            first = last - limit
+          else
+            first = 0
+          end
+          first = 0 if first < 0
+        end
+      end
+      if first && last
+        i = first
+        while i <= last
+          break unless snap = @snaps[i]
+          break unless model = store_transform(snap)
+          items << model
+          i += 1
+        end
+      end
+      if order == :desc
+        items = items.reverse
+      end
       if (snap = items.first) && snap.is_a?(RMXFirebaseModel)
         RMXFirebaseBatch.new(items).once(queue, &block)
       else
@@ -38,10 +85,6 @@ class RMXFirebaseCollection
       end
     end
     self
-  end
-
-  def once_async(&block)
-    once(:async, &block)
   end
 
   # completes with `self` once, when the collection is ready.
@@ -57,8 +100,24 @@ class RMXFirebaseCollection
     self
   end
 
-  def always_async(&block)
-    always(:async, &block)
+  def once_models(queue=nil, &block)
+    once(:async) do |collection|
+      collection.transformed(&block)
+    end
+  end
+
+  def once_models(queue=nil, pager=nil, &block)
+    once_canceller = once(:async) do |collection|
+      collection.transformed(queue, pager, &block)
+    end
+    pager_canceller = RMX(pager).on(:changed) do
+      changed!
+    end
+    off_block = proc do
+      once_canceller.call
+      pager_canceller.call
+    end
+    off_block
   end
 
   # completes with `self` immediately if ready, and every time the collection :ready fires.
@@ -70,6 +129,26 @@ class RMXFirebaseCollection
       RMXFirebase.block_on_queue(queue, self, &block)
     end
     RMX(self).on(:ready, :queue => queue, &block)
+  end
+
+  def always_models(queue=nil, &block)
+    always(:async) do |collection|
+      collection.transformed(&block)
+    end
+  end
+
+  def always_models(queue=nil, pager=nil, &block)
+    always_canceller = always(:async) do |collection|
+      collection.transformed(queue, pager, &block)
+    end
+    pager_canceller = RMX(pager).on(:changed) do
+      changed!
+    end
+    off_block = proc do
+      always_canceller.call
+      pager_canceller.call
+    end
+    off_block
   end
 
   # completes with `self` every time the collection :changed fires.
@@ -86,6 +165,12 @@ class RMXFirebaseCollection
   def added(queue=nil, &block)
     return false if cancelled?
     RMX(self).on(:added, :queue => queue, &block)
+  end
+
+  def added_model(queue=nil, &block)
+    added(:async) do |collection, snap|
+      collection.transform(snap).once(&block)
+    end
   end
 
   # completes with `self`, `snap` every time the collection :removed fires.
@@ -108,7 +193,6 @@ class RMXFirebaseCollection
     @snaps_by_name = {}
     @snaps = []
     @transformations_table = {}
-    @transformations = []
     @added_handler = nil
     @removed_handler = nil
     @moved_handler = nil
@@ -116,7 +200,6 @@ class RMXFirebaseCollection
     @cancel_error = nil
     @ref = nil
     @root = nil
-    @once_done = nil
     setup_ref(_ref)
   end
 
@@ -149,10 +232,7 @@ class RMXFirebaseCollection
       end
       @value_handler = @root.on(:value, { :disconnect => cancel_block }) do |collection|
         RMXFirebase::QUEUE.barrier_async do
-          @once_done ||= begin
-            ready!
-            true
-          end
+          ready! unless ready?
         end
       end
       RMX(self).on(:cancelled, :exclusive => [ :ready, :changed, :added, :removed, :moved ], :queue => :async)
@@ -180,7 +260,6 @@ class RMXFirebaseCollection
     @ref = nil
     @root = nil
     @state = nil
-    @once_done = nil
   end
 
   # internal
@@ -211,16 +290,6 @@ class RMXFirebaseCollection
     end
   end
 
-  # internal, allows the user to pass a block for transformations instead of subclassing
-  # and overriding #transform, for one-off cases
-  def transform=(block)
-    if block
-      @transform_block = RMX.safe_block(block)
-    else
-      @transform_block = nil
-    end
-  end
-
   # internal
   def store_transform(snap)
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
@@ -246,7 +315,6 @@ class RMXFirebaseCollection
       end
       moved = true
       @snaps.delete_at(current_index)
-      @transformations.delete_at(current_index)
       if was_index = @snaps_by_name.delete(snap.name)
         @snaps_by_name.keys.each do |k|
           v = @snaps_by_name[k]
@@ -261,7 +329,6 @@ class RMXFirebaseCollection
     if prev && (index = @snaps_by_name[prev])
       new_index = index + 1
       @snaps.insert(new_index, snap)
-      @transformations.insert(new_index, store_transform(snap))
       @snaps_by_name.keys.each do |k|
         v = @snaps_by_name[k]
         if v >= new_index
@@ -272,7 +339,6 @@ class RMXFirebaseCollection
       # raise if snaps_by_name.values.uniq.size != snaps_by_name.values.size
     else
       @snaps.unshift(snap)
-      @transformations.unshift(store_transform(snap))
       @snaps_by_name.keys.each do |k|
         v = @snaps_by_name[k]
         @snaps_by_name[k] += 1
@@ -292,7 +358,6 @@ class RMXFirebaseCollection
   def remove(snap)
     if current_index = @snaps_by_name[snap.name]
       @snaps.delete_at(current_index)
-      @transformations.delete_at(current_index)
       @snaps_by_name.keys.each do |k|
         v = @snaps_by_name[k]
         if v > current_index

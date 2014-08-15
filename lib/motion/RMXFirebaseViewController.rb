@@ -16,6 +16,9 @@ class RMXFirebaseViewController < RMXViewController
   def changed
   end
 
+  def pending
+  end
+
   def model
     @model
   end
@@ -28,13 +31,10 @@ class RMXFirebaseViewController < RMXViewController
     end
     @model = val
     if @model
-      unless @model.ready?
-        raise "#{className} tried to use a model that is not ready: #{@model.inspect}"
-      end
       @model_unbinder = @model.always do |m|
         next unless m == @model
         if isViewLoaded
-          changed
+          m.ready? ? changed : pending
         else
           @pending_changed = true
         end
