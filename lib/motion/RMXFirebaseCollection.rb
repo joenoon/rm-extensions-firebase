@@ -295,10 +295,21 @@ class RMXFirebaseCollection
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     @transformations_table[snap] ||= begin
       model = transform(snap)
-      RMX(model).on(:cancelled, :queue => :async) do
-        changed!
-      end
+      # RMX(model).on(:cancelled, :queue => :async) do
+      #   changed!
+      # end
       model
+    end
+  end
+
+  def clear_transform(snap)
+    RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
+    @transformations_table.delete(snap)
+  end
+
+  def clear_transformations!
+    RMXFirebase::QUEUE.barrier_async do
+      @transformations_table.clear
     end
   end
 
@@ -359,6 +370,7 @@ class RMXFirebaseCollection
   # internal
   def remove(snap)
     if current_index = @snaps_by_name[snap.name]
+      clear_transform(snap)
       @snaps.delete_at(current_index)
       @snaps_by_name.keys.each do |k|
         v = @snaps_by_name[k]
