@@ -346,10 +346,12 @@ class RMXFirebaseCollection
       @snaps_by_name[snap.name] = 0
       # raise if snaps_by_name.values.uniq.size != snaps_by_name.values.size
     end
-    if moved
-      RMX(self).trigger(:moved, self, snap, prev)
-    else
-      RMX(self).trigger(:added, self, snap, prev)
+    if ready?
+      if moved
+        RMX(self).trigger(:moved, self, snap, prev)
+      else
+        RMX(self).trigger(:added, self, snap, prev)
+      end
     end
     changed!
   end
@@ -364,7 +366,9 @@ class RMXFirebaseCollection
           @snaps_by_name[k] -= 1
         end
       end
-      RMX(self).trigger(:removed, self, snap)
+      if ready?
+        RMX(self).trigger(:removed, self, snap)
+      end
       changed!
     end
   end
