@@ -15,6 +15,7 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
   end
 
   def pending
+    reset
   end
 
   def model

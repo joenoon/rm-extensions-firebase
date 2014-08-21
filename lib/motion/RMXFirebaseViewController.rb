@@ -17,6 +17,7 @@ class RMXFirebaseViewController < RMXViewController
   end
 
   def pending
+    reset
   end
 
   def model
