@@ -25,9 +25,24 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
     return @model if val == @model
     @model = val
     if @model
-      @model_unbinder = @model.always do |m|
-        next unless m == @model
-        m.ready? ? changed : pending
+      if sizerCellReuseIdentifier
+        reset
+        @model.ready? ? changed : pending
+        @sizerModels ||= NSHashTable.weakObjectsHashTable
+        unless @sizerModels.containsObject(@model)
+          @sizerModels.addObject(@model)
+          @model.changed do |m|
+            if th = tableHandler
+              th.invalidateHeightForData(m, reuseIdentifier:sizerCellReuseIdentifier)
+            end
+          end
+        end
+        @model = nil
+      else
+        @model_unbinder = @model.always do |m|
+          next unless m == @model
+          m.ready? ? changed : pending
+        end
       end
     end
     @model
