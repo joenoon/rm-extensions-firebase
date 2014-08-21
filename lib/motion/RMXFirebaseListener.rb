@@ -22,13 +22,26 @@ class RMXFirebaseListener
     @state == :cancelled
   end
 
+  def stateInfo
+    info = []
+    # prevent infinite loop if cancelled models point to each other
+    return info if @processingCancelInfo
+    @processingCancelInfo = true
+    info << {
+      :ref => @ref.description,
+      :state => @state,
+      :error => (@cancel_error && @cancel_error.localizedDescription || nil)
+    }
+    @processingCancelInfo = false
+    info
+  end
+
   def start!
     @state = nil
     RMX(self).require_queue!(RMXFirebase::QUEUE, __FILE__, __LINE__) if RMX::DEBUG_QUEUES
     cancel_block = lambda do |err|
       @state = :cancelled
       @cancel_error = err
-      RMX(self).trigger(:cancelled, self)
       RMX(self).trigger(:finished, self)
     end
     @handle = ref.on(:value, { :disconnect => cancel_block }) do |snap|
@@ -41,7 +54,6 @@ class RMXFirebaseListener
         else
           callback.call(snap) if callback && callback_owner
           @state = :ready
-          RMX(self).trigger(:ready, self)
           RMX(self).trigger(:finished, self)
           # p "ready__"
         end

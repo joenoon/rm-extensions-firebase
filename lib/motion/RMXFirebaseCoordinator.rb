@@ -10,6 +10,18 @@ class RMXFirebaseCoordinator
 
   end
 
+  def stateInfo
+    info = []
+    # prevent infinite loop if cancelled models point to each other
+    return info if @processingCancelInfo
+    @processingCancelInfo = true
+    watches.values.each do |w|
+      info += w.stateInfo
+    end
+    @processingCancelInfo = false
+    info
+  end
+
   def clear!
     RMXFirebase::QUEUE.barrier_async do
       @state = nil
@@ -36,7 +48,6 @@ class RMXFirebaseCoordinator
     RMXFirebase::QUEUE.barrier_async do
       # p "ready!"
       @state = :ready
-      RMX(self).trigger(:ready, self)
       RMX(self).trigger(:finished, self)
     end
   end
@@ -45,7 +56,6 @@ class RMXFirebaseCoordinator
     RMXFirebase::QUEUE.barrier_async do
       # p "cancelled!"
       @state = :cancelled
-      RMX(self).trigger(:cancelled, self)
       RMX(self).trigger(:finished, self)
     end
   end

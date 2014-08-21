@@ -20,8 +20,8 @@ class RMXFirebaseCollection
   end
 
   # public
-  def changed?
-    @state
+  def finished?
+    @state || false
   end
 
   # public, completes with changed transformations
@@ -101,31 +101,30 @@ class RMXFirebaseCollection
   # completes with `self` once, when the collection is changed.
   # retains `self` and the sender until complete
   def once(queue=nil, &block)
-    RMXFirebase::QUEUE.barrier_async do
-      if changed?
-        RMXFirebase.block_on_queue(queue, self, &block)
-      else
-        RMX(self).once(:changed, :strong => true, :queue => queue, &block)
-      end
+    if finished?
+      RMXFirebase.block_on_queue(queue, self, &block)
+    else
+      RMX(self).once(:finished, :strong => true, :queue => queue, &block)
     end
-    self
   end
 
   # completes with `self` immediately if changed, and every time the collection changes.
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
   def always(queue=nil, &block)
-    if changed?
+    if finished?
       RMXFirebase.block_on_queue(queue, self, &block)
     end
-    RMX(self).on(:changed, :queue => queue, &block)
+    RMX(self).on(:finished, :queue => queue, &block)
   end
 
   # completes with `self` every time the collection changes.
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
   def changed(queue=nil, &block)
-    RMX(self).on(:changed, :queue => queue, &block)
+    unless cancelled?
+      RMX(self).on(:finished, :queue => queue, &block)
+    end
   end
 
   # completes with `models` once, when the collection is changed.
@@ -137,7 +136,7 @@ class RMXFirebaseCollection
     end
     pager_canceller = if pager
       RMX(pager).on(:changed) do
-        changed!
+        finished!
       end
     end
     off_block = proc do
@@ -159,7 +158,7 @@ class RMXFirebaseCollection
     end
     pager_canceller = if pager
       RMX(pager).on(:changed) do
-        changed!
+        finished!
       end
     end
     off_block = proc do
@@ -181,7 +180,7 @@ class RMXFirebaseCollection
     end
     pager_canceller = if pager
       RMX(pager).on(:changed) do
-        changed!
+        finished!
       end
     end
     off_block = proc do
@@ -255,7 +254,7 @@ class RMXFirebaseCollection
   def ready!
     RMXFirebase::QUEUE.barrier_async do
       @state = :ready
-      changed!
+      finished!
     end
   end
 
@@ -263,26 +262,39 @@ class RMXFirebaseCollection
   def cancelled!
     RMXFirebase::QUEUE.barrier_async do
       @state = :cancelled
-      changed!
+      finished!
+      on_cancelled
     end
   end
 
+  # public, overridable
+  def on_cancelled
+  end
+
+  def stateInfo
+    info = []
+    # prevent infinite loop if cancelled models point to each other
+    return info if @processingCancelInfo
+    @processingCancelInfo = true
+    info << {
+      :ref => @ref.description,
+      :state => @state,
+      :error => (@cancel_error && @cancel_error.localizedDescription || nil)
+    }
+    @processingCancelInfo = false
+    info
+  end
+
   # internal
-  def changed!
+  def finished!
     RMXFirebase::QUEUE.barrier_async do
-      if ready?
-        RMX(self).trigger(:ready, self)
-      end
-      if cancelled?
-        RMX(self).trigger(:cancelled, self)
-      end
-      RMX(self).trigger(:changed, self)
+      RMX(self).trigger(:finished, self)
     end
   end
 
   # this is the method you should call
   def self.get(ref)
-    if ref && existing = identity_map[[ className, ref.description ]]
+    if ref && (existing = identity_map[[ className, ref.description ]]) && !existing.cancelled?
       if RMXFirebase::DEBUG_IDENTITY_MAP
         p "HIT!", className, ref.description, existing.retainCount
       end
