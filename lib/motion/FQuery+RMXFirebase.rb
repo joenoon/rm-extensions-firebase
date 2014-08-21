@@ -49,8 +49,7 @@ class FQuery
     handler = nil
     if and_then.arity == 1
       inner_block = RMX.safe_block(lambda do |snap|
-        datasnap = RMXFirebaseDataSnapshot.new(snap)
-        completion.call(datasnap)
+        completion.call(snap)
       end)
       wrapped_block = lambda do |snap|
         inner_block.call(snap)
@@ -78,8 +77,7 @@ class FQuery
       end
     else
       inner_block = RMX.safe_block(lambda do |snap, prev|
-        datasnap = RMXFirebaseDataSnapshot.new(snap)
-        completion.call(datasnap, prev)
+        completion.call(snap, prev)
       end)
       wrapped_block = lambda do |snap, prev|
         inner_block.call(snap, prev)

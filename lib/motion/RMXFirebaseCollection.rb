@@ -153,8 +153,9 @@ class RMXFirebaseCollection
   # takes optional pager.
   # returns an "unbinder" that can be called to stop listening.
   def always_models(queue=nil, pager=nil, &block)
+    sblock = RMX.safe_block(block)
     always_canceller = always(:async) do |collection|
-      collection.transformed(queue, pager, &block)
+      collection.transformed(queue, pager, &sblock)
     end
     pager_canceller = if pager
       RMX(pager).on(:changed) do
@@ -175,8 +176,9 @@ class RMXFirebaseCollection
   # takes optional pager.
   # returns an "unbinder" that can be called to stop listening.
   def changed_models(queue=nil, pager=nil, &block)
+    sblock = RMX.safe_block(block)
     changed_canceller = changed(:async) do |collection|
-      collection.transformed(queue, pager, &block)
+      collection.transformed(queue, pager, &sblock)
     end
     pager_canceller = if pager
       RMX(pager).on(:changed) do
@@ -196,17 +198,19 @@ class RMXFirebaseCollection
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
   def added_model(queue=nil, &block)
+    sblock = RMX.safe_block(block)
     RMX(self).on(:added_model, :queue => :async) do |model|
-      RMXFirebase.block_on_queue(queue, model, &block)
+      RMXFirebase.block_on_queue(queue, model, &sblock)
     end
   end
 
   # completes with `model` every time the collection :removed fires.
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
-  def removed(queue=nil, &block)
+  def removed_model(queue=nil, &block)
+    sblock = RMX.safe_block(block)
     RMX(self).on(:removed_model, :queue => :async) do |model|
-      RMXFirebase.block_on_queue(queue, model, &block)
+      RMXFirebase.block_on_queue(queue, model, &sblock)
     end
   end
 
@@ -231,7 +235,7 @@ class RMXFirebaseCollection
       end
       @value_handler = _ref.on(:value, { :disconnect => cancel_block }) do |collection|
         RMXFirebase::QUEUE.barrier_async do
-          @snaps = collection.children
+          @snaps = collection.childrenArray
           ready!
         end
       end

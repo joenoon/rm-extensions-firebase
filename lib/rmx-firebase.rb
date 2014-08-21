@@ -9,8 +9,8 @@ Motion::Project::App.setup do |app|
   %w(
     Firebase+RMXFirebase
     FQuery+RMXFirebase
+    FDataSnapshot+RMXFirebase
     RMXFirebase
-    RMXFirebaseDataSnapshot
     RMXFirebaseListener
     RMXFirebaseCoordinator
     RMXFirebaseModel
