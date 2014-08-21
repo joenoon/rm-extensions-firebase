@@ -128,26 +128,24 @@ class RMXFirebaseModel
     RMX(self).on(:ready, :queue => queue, &block)
   end
 
+  def changed(queue=nil, &block)
+    RMX(self).on(:finished, :queue => queue, &block)
+  end
+
   def once(queue=nil, &block)
-    RMXFirebase::QUEUE.barrier_async do
-      if ready?
-        RMXFirebase.block_on_queue(queue, self, &block)
-      else
-        RMX(self).once(:ready, :strong => true, :queue => queue, &block)
-      end
+    if ready?
+      RMXFirebase.block_on_queue(queue, self, &block)
+    else
+      RMX(self).once(:ready, :strong => true, :queue => queue, &block)
     end
-    self
   end
 
   def once_finished(queue=nil, &block)
-    RMXFirebase::QUEUE.barrier_async do
-      if finished?
-        RMXFirebase.block_on_queue(queue, self, &block)
-      else
-        RMX(self).once(:finished, :strong => true, :queue => queue, &block)
-      end
+    if finished?
+      RMXFirebase.block_on_queue(queue, self, &block)
+    else
+      RMX(self).once(:finished, :strong => true, :queue => queue, &block)
     end
-    self
   end
 
   def cancel_block(&block)
@@ -168,15 +166,9 @@ class RMXFirebaseModel
     root.toValue
   end
 
-  def self.create(&block)
-    x = new
-    block.call(x)
-    x
-  end
-
   # this is the method you should call
   def self.get(opts=nil)
-    if opts && existing = identity_map[[ className, opts ]]
+    if opts && (existing = identity_map[[ className, opts ]]) && !existing.cancelled?
       if RMXFirebase::DEBUG_IDENTITY_MAP
         p "HIT!", className, opts, existing.retainCount
       end
