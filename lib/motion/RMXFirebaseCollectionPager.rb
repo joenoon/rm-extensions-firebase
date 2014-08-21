@@ -2,31 +2,20 @@ class RMXFirebaseCollectionPager
 
   include RMXCommonMethods
 
-  def starting_at
-    RMX(self).sync_ivar(:starting_at)
+  def range
+    RMX(self).sync_ivar(:range)
   end
 
-  def starting_at=(val)
-    RMX(self).sync_ivar(:starting_at, val)
+  def range=(val)
+    RMX(self).sync_ivar(:range, val)
     changed!
   end
 
-  def ending_at
-    RMX(self).sync_ivar(:ending_at)
-  end
-
-  def ending_at=(val)
-    RMX(self).sync_ivar(:ending_at, val)
-    changed!
-  end
-
-  def limit
-    RMX(self).sync_ivar(:limit)
-  end
-
-  def limit=(val)
-    RMX(self).sync_ivar(:limit, val)
-    changed!
+  def shift_range(add_range)
+    r = range || (0..0)
+    x = r.first + add_range.first
+    y = r.last + add_range.last
+    self.range = Range.new(x, y, add_range.exclude_end?)
   end
 
   def order

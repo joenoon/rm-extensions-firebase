@@ -2,7 +2,7 @@ class RMXFirebaseCollection
 
   include RMXCommonMethods
 
-  attr_reader :ref, :snaps, :cancel_error
+  attr_reader :ref, :snaps, :snapshot, :cancel_error
 
   # public, override required
   def transform(snap)
@@ -27,75 +27,46 @@ class RMXFirebaseCollection
   # public, completes with changed transformations
   def transformed(queue=nil, pager=nil, &block)
     RMXFirebase::QUEUE.barrier_async do
-      starting_at = pager && pager.starting_at
-      ending_at = pager && pager.ending_at
-      limit = pager && pager.limit
+      range = pager && pager.range
       order = pager && pager.order
-      items = []
-      first = nil
-      last = nil
-      max_index = @snaps.size - 1
-      if starting_at
-        if first = @snaps.index { |x|
-          begin
-            x.priority >= starting_at
-          rescue => e
-            p "x.priority: #{x.priority.inspect}, starting_at: #{starting_at.inspect}, e: #{e.inspect}"
-          end
-        }
-          last = first + limit
-          last = max_index if last > max_index
-        end
-      elsif ending_at
-        if last = @snaps.rindex { |x| x.priority <= ending_at }
-          first = last - limit
-          first = 0 if first < 0
-        end
-      else
-        last = @snaps.size - 1
-        if last > -1
-          if limit
-            first = last - limit
-          else
-            first = 0
-          end
-          first = 0 if first < 0
-        end
+
+      # p @ref.description, "range", range.inspect, "order", order.inspect
+      
+      snaps = order == :desc ? @snaps.reverse : @snaps
+      snaps = range ? snaps[range] : snaps
+      items = snaps.map { |snap| transform(snap) }
+
+      last_snaps = @last_snaps
+      snaps = @snaps.dup
+      if last_snaps
+        compare_snaps!(snaps, last_snaps.dup)
       end
-      if first && last
-        i = first
-        while i < last
-          break unless snap = @snaps[i]
-          break unless model = transform(snap)
-          items << model
-          i += 1
-        end
-      end
-      if last_snaps = @last_snaps
-        removed = (last_snaps - @snaps).map { |x| transform(x) }
-        added = (@snaps - last_snaps).map { |x| transform(x) }
-        if removed.size > 0
-          RMXFirebaseBatch.new(removed).once(:async) do |removed_models|
-            removed_models.each do |removed_model|
-              RMX(self).trigger(:removed_model, removed_model)
-            end
-          end
-        end
-        if added.size > 0
-          RMXFirebaseBatch.new(added).once(:async) do |added_models|
-            added_models.each do |added_model|
-              RMX(self).trigger(:added_model, added_model)
-            end
-          end
-        end
-      end
-      @last_snaps = @snaps.dup
-      if order == :desc
-        items = items.reverse
-      end
+      @last_snaps = snaps
+
       RMXFirebaseBatch.new(items).once(queue, &block)
     end
     self
+  end
+
+  def compare_snaps!(current, prev)
+    RMXFirebase::QUEUE.barrier_async do
+      removed = (prev - current).map { |x| transform(x) }
+      added = (current - prev).map { |x| transform(x) }
+      if removed.size > 0
+        RMXFirebaseBatch.new(removed).once(:async) do |removed_models|
+          removed_models.each do |removed_model|
+            RMX(self).trigger(:removed_model, removed_model)
+          end
+        end
+      end
+      if added.size > 0
+        RMXFirebaseBatch.new(added).once(:async) do |added_models|
+          added_models.each do |added_model|
+            RMX(self).trigger(:added_model, added_model)
+          end
+        end
+      end
+    end
   end
 
   # completes with `self` once, when the collection is changed.
@@ -217,6 +188,7 @@ class RMXFirebaseCollection
   # internal
   def initialize(_ref)
     @snaps = []
+    @snapshot = nil
     @value_handler = nil
     @cancel_error = nil
     @ref = nil
@@ -235,6 +207,7 @@ class RMXFirebaseCollection
       end
       @value_handler = _ref.on(:value, { :disconnect => cancel_block }) do |collection|
         RMXFirebase::QUEUE.barrier_async do
+          @snapshot = collection
           @snaps = collection.childrenArray
           ready!
         end
