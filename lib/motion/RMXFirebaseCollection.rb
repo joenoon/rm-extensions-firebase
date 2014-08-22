@@ -72,11 +72,14 @@ class RMXFirebaseCollection
   # completes with `self` once, when the collection is changed.
   # retains `self` and the sender until complete
   def once(queue=nil, &block)
-    if finished?
-      RMXFirebase.block_on_queue(queue, self, &block)
-    else
-      RMX(self).once(:finished, :strong => true, :queue => queue, &block)
+    RMXFirebase::QUEUE.barrier_async do
+      if finished?
+        RMXFirebase.block_on_queue(queue, self, &block)
+      else
+        RMX(self).once(:finished, :strong => true, :queue => queue, &block)
+      end
     end
+    nil
   end
 
   # completes with `self` immediately if changed, and every time the collection changes.
@@ -102,21 +105,10 @@ class RMXFirebaseCollection
   # takes optional pager.
   # retains `self` and the sender until complete
   def once_models(queue=nil, pager=nil, &block)
-    once_canceller = once(:async) do |collection|
+    once(:async) do |collection|
       collection.transformed(queue, pager, &block)
     end
-    pager_canceller = if pager
-      RMX(pager).on(:changed) do
-        finished!
-      end
-    end
-    off_block = proc do
-      once_canceller.call
-      if pager_canceller
-        pager_canceller.call
-      end
-    end
-    off_block
+    nil
   end
 
   # completes with `models` immediately if changed, and every time the collection changes.
@@ -129,8 +121,8 @@ class RMXFirebaseCollection
       collection.transformed(queue, pager, &sblock)
     end
     pager_canceller = if pager
-      RMX(pager).on(:changed) do
-        finished!
+      RMX(pager).on(:changed, :queue => RMXFirebase::QUEUE) do
+        finished! if finished?
       end
     end
     off_block = proc do
@@ -152,8 +144,8 @@ class RMXFirebaseCollection
       collection.transformed(queue, pager, &sblock)
     end
     pager_canceller = if pager
-      RMX(pager).on(:changed) do
-        finished!
+      RMX(pager).on(:changed, :queue => RMXFirebase::QUEUE) do
+        finished! if finished?
       end
     end
     off_block = proc do

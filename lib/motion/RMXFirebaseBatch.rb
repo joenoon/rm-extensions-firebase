@@ -43,7 +43,9 @@ class RMXFirebaseBatch
           end
         end
       else
-        finished!
+        RMXFirebase::QUEUE.barrier_async do
+          finished!
+        end
       end
     end
   end
@@ -74,11 +76,14 @@ class RMXFirebaseBatch
   end
 
   def once(queue=nil, &block)
-    if finished?
-      RMXFirebase.block_on_queue(queue, @finished_models.dup, &block)
-    else
-      RMX(self).once(:finished, :strong => true, :queue => queue, &block)
+    RMXFirebase::QUEUE.barrier_async do
+      if finished?
+        RMXFirebase.block_on_queue(queue, @finished_models.dup, &block)
+      else
+        RMX(self).once(:finished, :strong => true, :queue => queue, &block)
+      end
     end
+    nil
   end
 
   def cancel_block(&block)
