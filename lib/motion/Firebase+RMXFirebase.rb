@@ -67,22 +67,17 @@ class Firebase
     value
   end
 
-  def rmx_setValue(value, andPriority:priority)
-    # value = rmx_castValue(value)
-    setValue(value, andPriority:priority)
-  end
-  def rmx_setValue(value)
-    # value = rmx_castValue(value)
-    setValue(value)
-  end
-  def rmx_onDisconnectSetValue(value)
-    value = rmx_castValue(value)
-    onDisconnectSetValue(value)
-  end
-
   alias_method 'orig_setValue', 'setValue'
   alias_method 'orig_setValueAndPriority', 'setValue:andPriority'
+  alias_method 'orig_setValueAndPriorityCompletionBlock', 'setValue:andPriority:withCompletionBlock'
 
+  def setValue(value, andPriority:priority, withCompletionBlock:block)
+    if DEBUG_SETVALUE
+      p description, "setValue:andPriority:withCompletionBlock", value, priority
+    end
+    value = rmx_castValue(value)
+    orig_setValueAndPriorityCompletionBlock(value, priority, block)
+  end
   def setValue(value, andPriority:priority)
     if DEBUG_SETVALUE
       p description, "setValue:andPriority", value, priority
