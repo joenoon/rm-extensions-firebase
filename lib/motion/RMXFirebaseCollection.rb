@@ -86,8 +86,10 @@ class RMXFirebaseCollection
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
   def always(queue=nil, &block)
-    if finished?
-      RMXFirebase.block_on_queue(queue, self, &block)
+    RMXFirebase::QUEUE.barrier_async do
+      if finished?
+        RMXFirebase.block_on_queue(queue, self, &block)
+      end
     end
     RMX(self).on(:finished, :queue => queue, &block)
   end
@@ -96,9 +98,7 @@ class RMXFirebaseCollection
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
   def changed(queue=nil, &block)
-    unless cancelled?
-      RMX(self).on(:finished, :queue => queue, &block)
-    end
+    RMX(self).on(:finished, :queue => queue, &block)
   end
 
   # completes with `models` once, when the collection is changed.

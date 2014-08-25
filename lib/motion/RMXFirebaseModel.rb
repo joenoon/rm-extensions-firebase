@@ -137,16 +137,16 @@ class RMXFirebaseModel
   end
 
   def always(queue=nil, &block)
-    if finished?
-      RMXFirebase.block_on_queue(queue, self, &block)
+    RMXFirebase::QUEUE.barrier_async do
+      if finished?
+        RMXFirebase.block_on_queue(queue, self, &block)
+      end
     end
     RMX(self).on(:finished, :queue => queue, &block)
   end
 
   def changed(queue=nil, &block)
-    unless cancelled?
-      RMX(self).on(:finished, :queue => queue, &block)
-    end
+    RMX(self).on(:finished, :queue => queue, &block)
   end
 
   def once(queue=nil, &block)
