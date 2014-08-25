@@ -116,7 +116,7 @@ class RMXFirebaseCollection
   # takes optional pager.
   # returns an "unbinder" that can be called to stop listening.
   def always_models(queue=nil, pager=nil, &block)
-    sblock = RMX.safe_block(block)
+    sblock = RMX.safe_block(block, "#{ref.description} always_models block")
     always_canceller = always(:async) do |collection|
       collection.transformed(queue, pager, &sblock)
     end
@@ -139,7 +139,7 @@ class RMXFirebaseCollection
   # takes optional pager.
   # returns an "unbinder" that can be called to stop listening.
   def changed_models(queue=nil, pager=nil, &block)
-    sblock = RMX.safe_block(block)
+    sblock = RMX.safe_block(block, "#{ref.description} changed_models block")
     changed_canceller = changed(:async) do |collection|
       collection.transformed(queue, pager, &sblock)
     end
@@ -161,7 +161,7 @@ class RMXFirebaseCollection
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
   def added_model(queue=nil, &block)
-    sblock = RMX.safe_block(block)
+    sblock = RMX.safe_block(block, "#{ref.description} added_model block")
     RMX(self).on(:added_model, :queue => :async) do |model|
       RMXFirebase.block_on_queue(queue, model, &sblock)
     end
@@ -171,7 +171,7 @@ class RMXFirebaseCollection
   # does not retain `self` or the sender.
   # returns an "unbinder" that can be called to stop listening.
   def removed_model(queue=nil, &block)
-    sblock = RMX.safe_block(block)
+    sblock = RMX.safe_block(block, "#{ref.description} removed_model block")
     RMX(self).on(:removed_model, :queue => :async) do |model|
       RMXFirebase.block_on_queue(queue, model, &sblock)
     end

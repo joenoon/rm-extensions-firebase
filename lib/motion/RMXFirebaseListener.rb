@@ -89,4 +89,10 @@ class RMXFirebaseListener
     nil
   end
 
+  def rmx_dealloc
+    if ref && handle
+      ref.off(handle)
+    end
+  end
+
 end

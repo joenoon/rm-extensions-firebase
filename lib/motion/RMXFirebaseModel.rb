@@ -137,7 +137,7 @@ class RMXFirebaseModel
   end
 
   def always(queue=nil, &block)
-    sblock = RMX.safe_block(block)
+    sblock = RMX.safe_block(block, "#{self.inspect} always block")
     RMXFirebase::QUEUE.barrier_async do
       if finished?
         RMXFirebase.block_on_queue(queue, self, &sblock)
