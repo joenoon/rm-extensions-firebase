@@ -137,9 +137,10 @@ class RMXFirebaseModel
   end
 
   def always(queue=nil, &block)
+    sblock = RMX.safe_block(block)
     RMXFirebase::QUEUE.barrier_async do
       if finished?
-        RMXFirebase.block_on_queue(queue, self, &block)
+        RMXFirebase.block_on_queue(queue, self, &sblock)
       end
     end
     RMX(self).on(:finished, :queue => queue, &block)
