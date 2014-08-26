@@ -8,12 +8,6 @@ class RMXFirebaseListener
 
   RMX(self).weak_attr_accessor :callback_owner
 
-  def rmx_dealloc
-    if ref && handle
-      ref.off(handle)
-    end
-  end
-
   def ready?
     @state == :ready
   end
@@ -89,10 +83,8 @@ class RMXFirebaseListener
     nil
   end
 
-  def rmx_dealloc
-    if ref && handle
-      ref.off(handle)
-    end
+  def rmx_object_desc
+    "#{super}<handle#{@handle}:#{ref && ref.description}>"
   end
 
 end

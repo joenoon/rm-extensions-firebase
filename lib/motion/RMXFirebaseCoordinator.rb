@@ -22,20 +22,6 @@ class RMXFirebaseCoordinator
     info
   end
 
-  def clear!
-    RMXFirebase::QUEUE.barrier_async do
-      @state = nil
-      keys = watches.keys.dup
-      while keys.size > 0
-        name = keys.shift
-        watch = watches[name]
-        watch.stop!
-      end
-      watches.clear
-    end
-    self
-  end
-
   def ready?
     @state == :ready
   end

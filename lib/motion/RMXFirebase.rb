@@ -4,7 +4,6 @@ module RMXFirebase
   INTERNAL_QUEUE = Dispatch::Queue.new("RMXFirebase.internal")
 
   DEBUG_IDENTITY_MAP = RMX::Env['rmx_firebase_debug_identity_map'] == '1'
-  DEBUG_MODEL_DEALLOC = RMX::Env['rmx_firebase_debug_model_dealloc'] == '1'
 
   def self.queue_for(queueish)
     if queueish == :main || queueish.nil?

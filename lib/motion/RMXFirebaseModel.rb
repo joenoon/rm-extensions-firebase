@@ -15,13 +15,6 @@ class RMXFirebaseModel
     internal_setup
   end
 
-  def dealloc
-    if RMXFirebase::DEBUG_MODEL_DEALLOC
-      p " - dealloc!"
-    end
-    super
-  end
-
   def ready?
     @state == :ready
   end
