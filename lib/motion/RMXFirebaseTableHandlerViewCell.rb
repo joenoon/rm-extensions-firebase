@@ -4,7 +4,7 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
 
   def prepareForReuse
     if @model
-      @model_unbinder.call if @model_unbinder
+      @model_unbinder.dispose if @model_unbinder
       @model_unbinder = nil
     end
     @model = nil
@@ -12,10 +12,6 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
   end
 
   def changed
-  end
-
-  def pending
-    reset
   end
 
   def model
@@ -28,21 +24,21 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
     if @model
       if sizerCellReuseIdentifier
         reset
-        @model.ready? ? changed : pending
-        @sizerModels ||= NSHashTable.weakObjectsHashTable
-        unless @sizerModels.containsObject(@model)
-          @sizerModels.addObject(@model)
-          @model.changed do |m|
+        changed
+        @sizerModels ||= {}
+        unless @sizerModels.key?(@model.cache_key)
+          @sizerModels[@model.cache_key] = true
+          @model.ref.changed do |m|
             if th = tableHandler
-              th.invalidateHeightForData(m, reuseIdentifier:sizerCellReuseIdentifier)
+              th.invalidateHeightForCacheKey(m.cache_key, reuseIdentifier:sizerCellReuseIdentifier)
             end
           end
         end
         @model = nil
       else
-        @model_unbinder = @model.always do |m|
-          next unless m == @model
-          m.ready? ? changed : pending
+        @model_unbinder = @model.ref.always do |m|
+          @model = m
+          changed
         end
       end
     end

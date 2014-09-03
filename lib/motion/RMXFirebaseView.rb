@@ -8,10 +8,6 @@ class RMXFirebaseView < RMXView
   def changed
   end
 
-  def pending
-    reset
-  end
-
   def model
     @model
   end
@@ -19,15 +15,15 @@ class RMXFirebaseView < RMXView
   def model=(val)
     return @model if @model == val
     if @model
-      @model_unbinder.call if @model_unbinder
+      @model_unbinder.dispose if @model_unbinder
       @model_unbinder = nil
     end
     @model = val
     reset
     if @model
-      @model_unbinder = @model.always do |m|
-        next unless m == @model
-        m.ready? ? changed : pending
+      @model_unbinder = @model.ref.always do |m|
+        @model = m
+        changed
       end
     end
     @model

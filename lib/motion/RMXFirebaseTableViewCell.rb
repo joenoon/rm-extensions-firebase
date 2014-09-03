@@ -4,7 +4,7 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
 
   def prepareForReuse
     if @model
-      @model_unbinder.call if @model_unbinder
+      @model_unbinder.dispose if @model_unbinder
       @model_unbinder = nil
     end
     @model = nil
@@ -12,10 +12,6 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
   end
 
   def changed
-  end
-
-  def pending
-    reset
   end
 
   def model
@@ -26,9 +22,9 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
     return @model if val == @model
     @model = val
     if @model
-      @model_unbinder = @model.always do |m|
-        next unless m == @model
-        m.ready? ? changed : pending
+      @model_unbinder = @model.ref.always do |m|
+        @model = m
+        changed
       end
     end
     @model

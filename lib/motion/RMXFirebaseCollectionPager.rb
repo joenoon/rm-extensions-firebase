@@ -1,13 +1,20 @@
 class RMXFirebaseCollectionPager
 
+  RECURSIVE_LOCK = NSRecursiveLock.new
+
   include RMXCommonMethods
 
   def range
-    RMX(self).sync_ivar(:range)
+    RECURSIVE_LOCK.lock
+    res = @range
+    RECURSIVE_LOCK.unlock
+    res
   end
 
   def range=(val)
-    RMX(self).sync_ivar(:range, val)
+    RECURSIVE_LOCK.lock
+    @range = val
+    RECURSIVE_LOCK.unlock
     changed!
   end
 
@@ -19,16 +26,28 @@ class RMXFirebaseCollectionPager
   end
 
   def order
-    RMX(self).sync_ivar(:order)
+    RECURSIVE_LOCK.lock
+    res = @order
+    RECURSIVE_LOCK.unlock
+    res
   end
 
   def order=(val)
-    RMX(self).sync_ivar(:order, val)
+    RECURSIVE_LOCK.lock
+    @order = val
+    RECURSIVE_LOCK.unlock
     changed!
   end
 
   def changed!
-    RMX(self).trigger(:changed, self)
+    rac_valueSignal.sendNext(self)
+  end
+
+  def rac_valueSignal
+    RECURSIVE_LOCK.lock
+    rac_valueSignal = @rac_valueSignal ||= RACReplaySubject.replaySubjectWithCapacity(1)
+    RECURSIVE_LOCK.unlock
+    rac_valueSignal
   end
 
 end
