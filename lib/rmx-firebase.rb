@@ -11,12 +11,10 @@ Motion::Project::App.setup do |app|
     FQuery+RMXFirebase
     FDataSnapshot+RMXFirebase
     RMXFirebase
-    RMXFirebaseModelQuery
+    RMXFirebaseLiveshot
     RMXFirebaseModel
     RMXFirebaseBatch
-    RMXFirebaseCollectionQuery
     RMXFirebaseCollection
-    RMXFirebaseCollectionPager
     RMXFirebaseHandleModel
     RMXFirebaseTableViewCell
     RMXFirebaseTableHandlerViewCell

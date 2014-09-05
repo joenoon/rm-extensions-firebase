@@ -1,6 +1,16 @@
-# module RMXFirebase
+module RMXFirebase
 
-#   INTERNAL_QUEUE = Dispatch::Queue.new("RMXFirebase.internal")
+  def self.rac_schedulerFor(scheduler)
+    case scheduler
+    when nil, :main
+      RACScheduler.mainThreadScheduler
+    when :async
+      RACScheduler.scheduler
+    when RACScheduler
+      scheduler
+    else
+      raise "unknown scheduler: #{scheduler.inspect}"
+    end
+  end
 
-# end
-# Firebase.setDispatchQueue(RMXFirebase::INTERNAL_QUEUE.dispatch_object)
+end

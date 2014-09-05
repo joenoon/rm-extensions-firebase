@@ -16,6 +16,10 @@ class RMXFirebaseViewController < RMXViewController
   def changed
   end
 
+  def pending
+    reset
+  end
+
   def model
     @model
   end
@@ -28,10 +32,9 @@ class RMXFirebaseViewController < RMXViewController
     end
     @model = val
     if @model
-      @model_unbinder = @model.ref.always do |m|
-        @model = m
+      @model_unbinder = @model.always do
         if isViewLoaded
-          changed
+          @model.loaded? ? changed : pending
         else
           @pending_changed = true
         end

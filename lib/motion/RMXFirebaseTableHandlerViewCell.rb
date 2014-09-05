@@ -14,6 +14,10 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
   def changed
   end
 
+  def pending
+    reset
+  end
+
   def model
     @model
   end
@@ -26,19 +30,19 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
         reset
         changed
         @sizerModels ||= {}
-        unless @sizerModels.key?(@model.cache_key)
-          @sizerModels[@model.cache_key] = true
-          @model.ref.changed do |m|
+        @sizerModels[@model] ||= begin
+          p "sizer watch", @model
+          @model.changed do |m|
+            p "changed", m
             if th = tableHandler
-              th.invalidateHeightForCacheKey(m.cache_key, reuseIdentifier:sizerCellReuseIdentifier)
+              th.invalidateHeightForData(m, reuseIdentifier:sizerCellReuseIdentifier)
             end
           end
         end
         @model = nil
       else
-        @model_unbinder = @model.ref.always do |m|
-          @model = m
-          changed
+        @model_unbinder = @model.always do
+          @model.loaded? ? changed : pending
         end
       end
     end

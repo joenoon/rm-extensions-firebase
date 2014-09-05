@@ -14,6 +14,10 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
   def changed
   end
 
+  def pending
+    reset
+  end
+
   def model
     @model
   end
@@ -22,9 +26,8 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
     return @model if val == @model
     @model = val
     if @model
-      @model_unbinder = @model.ref.always do |m|
-        @model = m
-        changed
+      @model_unbinder = @model.always do
+        @model.loaded? ? changed : pending
       end
     end
     @model

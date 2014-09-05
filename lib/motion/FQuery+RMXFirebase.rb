@@ -26,6 +26,10 @@ class FQuery
     AFHTTPRequestSerializer.serializer.requestWithMethod("GET", URLString: "https://#{repo.repoInfo.host}#{path.toString}", parameters:queryParams.queryObject).URL.absoluteString
   end
 
+  def liveshot
+    RMXFirebaseLiveshot.new(self)
+  end
+
   # Value sends curr
   def rac_valueSignal
     self.class.rac_valueSignal(self)
@@ -46,6 +50,7 @@ class FQuery
           valueSubject.sendError(err)
           RECURSIVE_LOCK.unlock
         })
+        # ref.p "observeEventType", hash[:valueHandler]
       end
       hash[:numberOfValueSubscribers] += 1
       valueSubjectDisposable = valueSubject.subscribe(subscriber)
@@ -57,6 +62,7 @@ class FQuery
         if hash[:numberOfValueSubscribers] == 0
           if valueHandler = hash[:valueHandler]
             ref.removeObserverWithHandle(valueHandler)
+            # ref.p "removeObserverWithHandle", valueHandler
           else
             p "MISSING EXPECTED valueHandler!"
           end
