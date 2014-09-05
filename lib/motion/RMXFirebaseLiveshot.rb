@@ -1,6 +1,8 @@
 class RMXFirebaseLiveshot
 
   RECURSIVE_LOCK = NSRecursiveLock.new
+  
+  include RMXFirebaseSignalHelpers
 
   # readySignal will next true when:
   #   it is ready

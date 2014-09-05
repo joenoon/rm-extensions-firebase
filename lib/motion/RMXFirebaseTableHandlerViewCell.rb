@@ -31,9 +31,7 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
         changed
         @sizerModels ||= {}
         @sizerModels[@model] ||= begin
-          p "sizer watch", @model
           @model.changed do |m|
-            p "changed", m
             if th = tableHandler
               th.invalidateHeightForData(m, reuseIdentifier:sizerCellReuseIdentifier)
             end
