@@ -93,12 +93,16 @@ class RMXFirebaseLiveshot
     end
   end
 
-  def childrenArray
+  def children
     if s = snap
-      s.children.each.map { |x| x }
+      s.children
     else
       []
     end
+  end
+
+  def childrenArray
+    children.allObjects
   end
 
 end
