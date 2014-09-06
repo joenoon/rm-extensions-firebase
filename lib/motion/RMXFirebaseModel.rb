@@ -33,20 +33,18 @@ class RMXFirebaseModel
     RMX.log_dealloc(self)
     @opts = opts
     @checkSubject = RACSubject.subject
-    self.rac_liftSelector('makeReady', withSignalsFromArray:[@checkSubject.switchToLatest])
+    @checkSubject.switchToLatest
+    .subscribeNext(RMX.safe_lambda do |s|
+      RECURSIVE_LOCK.lock
+      @loaded = true
+      RECURSIVE_LOCK.unlock
+      @readySignal.sendNext(true)
+      @changedSignal.sendNext(true)
+    end)
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
     @changedSignal = RACSubject.subject
     @deps = {}
     setup
-  end
-
-  def makeReady(*args)
-    # p "makeReady!!!!", fullValue
-    RECURSIVE_LOCK.lock
-    @loaded = true
-    RECURSIVE_LOCK.unlock
-    @readySignal.sendNext(true)
-    @changedSignal.sendNext(true)
   end
 
   def loaded?
