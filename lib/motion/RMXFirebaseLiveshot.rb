@@ -1,7 +1,13 @@
 class RMXFirebaseLiveshot
 
   RECURSIVE_LOCK = NSRecursiveLock.new
-  
+
+  include RMXCommonMethods
+
+  def rmx_object_desc
+    "#{super}:#{r = ref and r.description}"
+  end
+
   include RMXFirebaseSignalHelpers
 
   # readySignal will next true when:
