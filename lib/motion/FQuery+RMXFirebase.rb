@@ -23,7 +23,15 @@ class FQuery
   end
 
   def description
-    AFHTTPRequestSerializer.serializer.requestWithMethod("GET", URLString: "https://#{repo.repoInfo.host}#{path.toString}", parameters:queryParams.queryObject).URL.absoluteString
+    url = "https://#{repo.repoInfo.host}#{path.toString}"
+    if q = queryParams && queryParams.queryObject
+      keys = q.keys
+      if keys.any?
+        params = keys.sort.map { |k| "#{k}=#{q[k]}" }.join("&")
+        url += "?#{params}"
+      end
+    end
+    url
   end
 
   def liveshot
