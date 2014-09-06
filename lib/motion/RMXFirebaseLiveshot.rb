@@ -94,9 +94,17 @@ class RMXFirebaseLiveshot
   end
 
   def attr(keypath)
+    valueForKeyPath(keypath)
+  end
+
+  def valueForKey(key)
     if s = snap
-      s.valueForKeyPath(keypath)
+      s.valueForKey(key)
     end
+  end
+
+  def valueForUndefinedKey(key)
+    nil
   end
 
   def children

@@ -12,13 +12,11 @@ class RMXFirebaseModel
 
   def self.property(name)
     define_method(name) do
-      if d = @deps[name]
-        d[:value]
-      end
+      valueForKeyPath(name)
     end
   end
 
-  property :_root
+  property :root
 
   attr_reader :opts
 
@@ -35,20 +33,25 @@ class RMXFirebaseModel
 
   def initialize(opts=nil)
     RMX.log_dealloc(self)
+    @dep_signals = NSMutableSet.new
     @deps = {}
     @opts = opts
     @checkSubject = RACSubject.subject
     @checkSubject.switchToLatest
     .subscribeNext(RMX.safe_lambda do |s|
-      RECURSIVE_LOCK.lock
-      @loaded = true
-      RECURSIVE_LOCK.unlock
-      @readySignal.sendNext(true)
-      @changedSignal.sendNext(true)
+      if check
+        # p "really ready"
+        RECURSIVE_LOCK.lock
+        @loaded = true
+        RECURSIVE_LOCK.unlock
+        @readySignal.sendNext(true)
+        @changedSignal.sendNext(true)
+      end
     end)
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
     @changedSignal = RACSubject.subject
     setup
+    check
   end
 
   def loaded?
@@ -59,81 +62,72 @@ class RMXFirebaseModel
   end
 
   def check
-    deps = @deps.values.map { |x| x[:signal] }
-    @checkSubject.sendNext(RACSignal.combineLatest(deps))
-  end
-
-  def root(object, opts={}, &block)
-    depend(:_root, object, opts, &block)
-  end
-
-  def depend(name, object, opts={}, &block)
-    sblock = block ? RMX.safe_block(block) : nil
-    # RECURSIVE_LOCK.lock
-    undepend(name)
-    weak_object = RMXWeakHolder.new(object)
-    @deps[name] = {
-      :value => object,
-      :signal => object.readySignal
-    }
-    @deps[name][:disposable] = @deps[name][:signal]
-    .takeUntil(object.rac_willDeallocSignal)
-    .subscribeNext(RMX.safe_lambda do |v|
-      RECURSIVE_LOCK.lock
-      if sblock and obj = weak_object.value
-        sblock.call(obj)
-      end
-      # p "check after #{name}"
-      check
-      RECURSIVE_LOCK.unlock
-    end)
-    # RECURSIVE_LOCK.unlock
-  end
-
-  def depend_if(name, cond, opts={}, &block)
-    if cond
-      existing = d = @deps[name] && d[:value]
-      if !existing || existing.opts != cond
-        if res = block.call(cond)
-          depend(name, res, opts) do |r|
-            if opts[:then]
-              opts[:then].call(r)
+    # p "check"
+    changed = false
+    @deps.each_pair do |name, hash|
+      opts = hash[:opts]
+      # p "check", name, opts
+      if model_klass = opts[:model] and keypath = opts[:keypath]
+        if model_opts = valueForKeyPath(keypath)
+          existing = hash[:value]
+          if !existing || existing.opts != model_opts
+            if existing
+              sig = existing.readySignal
+              if @dep_signals.containsObject(sig)
+                @dep_signals.removeObject(sig)
+                changed = true
+                # p "check delete signal", name, opts, sig
+              end
             end
+            hash[:value] = model_klass.get(model_opts)
           end
         end
       end
-    else
-      undepend(name)
+      if v = hash[:value]
+        sig = v.readySignal
+        unless @dep_signals.containsObject(sig)
+          @dep_signals.addObject(sig)
+          changed = true
+          # p "check add signal", name, opts, sig
+        end
+      end
+      # p "check done", name, opts
     end
+    if changed
+      # p "check send signals", @dep_signals.count
+      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects))
+    end
+    changed == false
   end
 
-  def undepend(name)
-    # RECURSIVE_LOCK.lock
-    if dep = @deps[name]
-      if dis = dep[:disposable]
-        dis.dispose
-      end
-      @deps.delete(name)
+  def depend(name, opts)
+    dep = @deps[name] = {}
+    if v = opts.delete(:value)
+      dep[:value] = v
     end
-    # RECURSIVE_LOCK.unlock
+    dep[:opts] = opts
   end
 
   def attr(keypath)
-    _root.attr(keypath)
+    root.attr(keypath)
   end
 
   def hasValue?
-    _root.hasValue?
+    root.hasValue?
   end
 
   def value
-    _root.value
+    root.value
   end
 
   def fullValue
     RECURSIVE_LOCK.lock
     res = @deps.keys.inject({}) do |ret, k|
-      ret[k] = @deps[k][:value].value
+      if dep = @deps[k]
+        if v = dep[:value]
+          ret[k] = v.value
+        end
+      end
       ret
     end
     RECURSIVE_LOCK.unlock
@@ -154,5 +148,15 @@ class RMXFirebaseModel
 
   alias_method :==, :isEqual
   alias_method :eql?, :isEqual
+
+  def valueForKey(key)
+    if d = @deps[key.to_sym]
+      d[:value]
+    end
+  end
+
+  def valueForUndefinedKey(key)
+    nil
+  end
 
 end
