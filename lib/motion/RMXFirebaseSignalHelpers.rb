@@ -33,8 +33,7 @@ module RMXFirebaseSignalHelpers
   # returns a RACDisposable
   def changed(scheduler=nil, &block)
     sblock = RMX.safe_block(block)
-    @readySignal
-    .skip(1)
+    @changedSignal
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(RMX.safe_lambda do |b|
