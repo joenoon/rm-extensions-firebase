@@ -163,4 +163,12 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     .subscribeNext(sblock)
   end
 
+  def limitIncrBy(num)
+    if r = ref
+      l = (r.queryParams && r.queryParams.queryObject["l"] || 0).to_i
+      new_ref = r.limited(l + num)
+      self.ref = new_ref
+    end
+  end
+
 end
