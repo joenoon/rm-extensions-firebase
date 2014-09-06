@@ -11,7 +11,11 @@ class RMXFirebaseModel
   end
 
   def self.property(name)
-    attr_reader name
+    define_method(name) do
+      if d = @deps[name]
+        d[:value]
+      end
+    end
   end
 
   property :_root
@@ -31,6 +35,7 @@ class RMXFirebaseModel
 
   def initialize(opts=nil)
     RMX.log_dealloc(self)
+    @deps = {}
     @opts = opts
     @checkSubject = RACSubject.subject
     @checkSubject.switchToLatest
@@ -43,7 +48,6 @@ class RMXFirebaseModel
     end)
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
     @changedSignal = RACSubject.subject
-    @deps = {}
     setup
   end
 
@@ -67,9 +71,9 @@ class RMXFirebaseModel
     sblock = block ? RMX.safe_block(block) : nil
     # RECURSIVE_LOCK.lock
     undepend(name)
-    instance_variable_set("@#{name}", object)
     weak_object = RMXWeakHolder.new(object)
     @deps[name] = {
+      :value => object,
       :signal => object.readySignal
     }
     @deps[name][:disposable] = @deps[name][:signal]
@@ -88,7 +92,7 @@ class RMXFirebaseModel
 
   def depend_if(name, cond, opts={}, &block)
     if cond
-      existing = instance_variable_get("@#{name}")
+      existing = d = @deps[name] && d[:value]
       if !existing || existing.opts != cond
         if res = block.call(cond)
           depend(name, res, opts) do |r|
@@ -111,7 +115,6 @@ class RMXFirebaseModel
       end
       @deps.delete(name)
     end
-    instance_variable_set("@#{name}", nil)
     # RECURSIVE_LOCK.unlock
   end
 
@@ -130,7 +133,7 @@ class RMXFirebaseModel
   def fullValue
     RECURSIVE_LOCK.lock
     res = @deps.keys.inject({}) do |ret, k|
-      ret[k] = send(k).value
+      ret[k] = @deps[k][:value].value
       ret
     end
     RECURSIVE_LOCK.unlock
