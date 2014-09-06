@@ -21,8 +21,10 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
         hash[:handler] = @readySignal
         .takeUntil(rac_willDeallocSignal)
         .subscribeNext(RMX.safe_lambda do |x|
-          items = childrenArray.map { |s| store_transform(s) }
-          RACSignal.combineLatestOrEmptyToArray(items.map(&:readySignal))
+          snaps = order == :desc ? childrenArray.reverse : childrenArray
+          items = snaps.map { |s| store_transform(s) } 
+          signals = items.map(&:readySignal)
+          RACSignal.combineLatestOrEmptyToArray(signals)
           .take(1)
           .subscribeNext(RMX.safe_lambda do |bools|
             subject.sendNext(items)
@@ -183,6 +185,21 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       new_ref = r.limited(num)
       self.ref = new_ref
     end
+  end
+
+  # order will affect future passes through modelsSignal, so set it before
+  # using modelsSignal (i.e. always_models, changed_models, once_models)
+  def order=(order)
+    RECURSIVE_LOCK.lock
+    @order = order
+    RECURSIVE_LOCK.unlock
+  end
+
+  def order
+    RECURSIVE_LOCK.lock
+    res = @order
+    RECURSIVE_LOCK.unlock
+    res
   end
 
 end
