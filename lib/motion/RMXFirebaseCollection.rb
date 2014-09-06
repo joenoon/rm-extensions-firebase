@@ -163,10 +163,24 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     .subscribeNext(sblock)
   end
 
+  # adjust the current Firebase ref's limit by an increment number
   def limitIncrBy(num)
     if r = ref
-      l = (r.queryParams && r.queryParams.queryObject["l"] || 0).to_i
-      new_ref = r.limited(l + num)
+      if l = r.queryParams && r.queryParams.queryObject["l"]
+        new_limit = l.to_i + num
+        new_limit = 0 if new_limit < 0
+        new_ref = r.limited(new_limit)
+        self.ref = new_ref
+      else
+        NSLog("#{className}#limitIncrBy WARNING: tried to increament a non-existent limit for #{r.description}")
+      end
+    end
+  end
+
+  # adjust the current Firebase ref's limit to an exact number
+  def limitTo(num)
+    if r = ref
+      new_ref = r.limited(num)
       self.ref = new_ref
     end
   end
