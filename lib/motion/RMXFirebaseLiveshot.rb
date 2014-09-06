@@ -15,21 +15,34 @@ class RMXFirebaseLiveshot
   #   it changes
   attr_reader :changedSignal
 
-  # ref this Liveshot is observing
-  attr_reader :ref
-
   def initialize(ref)
     RMX.log_dealloc(self)
 
-    @ref = ref
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
     @changedSignal = RACSubject.subject
+    @refSignal = RACSubject.subject
 
-    ref.rac_valueSignal
+    @refSignal.switchToLatest
     .takeUntil(rac_willDeallocSignal)
     .subscribeNext(RMX.safe_lambda do |snap|
       self.snap = snap
     end)
+    self.ref = ref
+  end
+
+  def ref=(ref)
+    RECURSIVE_LOCK.lock
+    @ref = ref
+    RECURSIVE_LOCK.unlock
+    @refSignal.sendNext(ref.rac_valueSignal)
+  end
+
+  # ref this Liveshot is observing
+  def ref
+    RECURSIVE_LOCK.lock
+    res = @ref
+    RECURSIVE_LOCK.unlock
+    res
   end
 
   def loaded?
@@ -39,7 +52,6 @@ class RMXFirebaseLiveshot
   def snap=(snap)
     RECURSIVE_LOCK.lock
     @snap = snap
-    @ref = snap.ref
     RECURSIVE_LOCK.unlock
     @readySignal.sendNext(true)
     @changedSignal.sendNext(true)
