@@ -23,15 +23,7 @@ class FQuery
   end
 
   def description
-    url = "https://#{repo.repoInfo.host}#{path.toString}"
-    if q = queryParams && queryParams.queryObject
-      keys = q.keys
-      if keys.any?
-        params = keys.sort.map { |k| "#{k}=#{q[k]}" }.join("&")
-        url += "?#{params}"
-      end
-    end
-    url
+    "https://#{repo.repoInfo.host}#{path.toString}##{queryParams.queryIdentifier}"
   end
 
   def liveshot
