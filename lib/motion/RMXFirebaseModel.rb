@@ -95,7 +95,7 @@ class RMXFirebaseModel
     end
     if changed
       # p "check send signals", @dep_signals.count
-      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects))
+      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects).subscribeOn(RACScheduler.scheduler))
     end
     changed == false
   end
