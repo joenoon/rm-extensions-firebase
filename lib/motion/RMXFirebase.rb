@@ -1,11 +1,13 @@
 module RMXFirebase
 
+  SCHEDULER = RACScheduler.scheduler
+
   def self.rac_schedulerFor(scheduler)
     case scheduler
     when nil, :main
       RACScheduler.mainThreadScheduler
     when :async
-      RACScheduler.scheduler
+      SCHEDULER
     when RACScheduler
       scheduler
     else

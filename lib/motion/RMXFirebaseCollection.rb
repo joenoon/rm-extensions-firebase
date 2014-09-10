@@ -19,14 +19,16 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       subject = hash[:subject] ||= RACReplaySubject.replaySubjectWithCapacity(1)
       if hash[:numberOfSubscribers] == 0
         hash[:handler] = @readySignal
-        .subscribeOn(RACScheduler.scheduler)
+        .subscribeOn(RMXFirebase::SCHEDULER)
         .takeUntil(rac_willDeallocSignal)
         .subscribeNext(RMX.safe_lambda do |x|
           snaps = order == :desc ? childrenArray.reverse : childrenArray
+          names = snaps.map(&:name)
           items = snaps.map { |s| store_transform(s) } 
+          purge_transforms_not_in_names(names)
           signals = items.map(&:readySignal)
           RACSignal.combineLatestOrEmpty(signals)
-          .subscribeOn(RACScheduler.scheduler)
+          .subscribeOn(RMXFirebase::SCHEDULER)
           .take(1)
           .flattenMap(->(tuple) {
             RACSignal.return(tuple.allObjects)
@@ -105,7 +107,19 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   end
 
   def store_transform(snap)
-    @models[snap.name] ||= transform(snap)
+    @models[snap.name] ||= begin
+      # p "adding new name", snap.name
+      transform(snap)
+    end
+  end
+
+  def purge_transforms_not_in_names(names)
+    existing_names = @models.keys
+    old_names = existing_names - names
+    old_names.each do |old_name|
+      # p "removing old name", old_name
+      @models.delete(old_name)
+    end
   end
 
   # completes with `models` once, when the collection is changed.
@@ -114,7 +128,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   # returns a RACDisposable
   def once_models(scheduler=nil, &block)
     modelsSignal
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .take(1)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(->(v) {
@@ -129,7 +143,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   def always_models(scheduler=nil, &block)
     sblock = RMX.safe_lambda(block)
     modelsSignal
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(sblock)
@@ -142,7 +156,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   def changed_models(scheduler=nil, &block)
     sblock = RMX.safe_lambda(block)
     modelsSignal
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .skip(1)
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
@@ -156,7 +170,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   def added_model(scheduler=nil, &block)
     sblock = RMX.safe_lambda(block)
     addedSignal
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(sblock)
@@ -169,7 +183,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   def removed_model(scheduler=nil, &block)
     sblock = RMX.safe_lambda(block)
     removedSignal
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(sblock)

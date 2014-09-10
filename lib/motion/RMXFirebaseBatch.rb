@@ -5,7 +5,7 @@ class RMXFirebaseBatch
   def initialize(*the_models)
     @models = the_models.flatten.compact
     @signals = @models.map(&:readySignal)
-    @signal = RACSignal.combineLatestOrEmpty(@signals).subscribeOn(RACScheduler.scheduler)
+    @signal = RACSignal.combineLatestOrEmpty(@signals).subscribeOn(RMXFirebase::SCHEDULER)
   end
 
   def once(scheduler=nil, &block)

@@ -37,21 +37,23 @@ class RMXFirebaseModel
     @deps = {}
     @opts = opts
     @checkSubject = RACSubject.subject
-    @checkSubject.switchToLatest
-    .subscribeNext(RMX.safe_lambda do |s|
-      if check
-        # p "really ready"
-        RECURSIVE_LOCK.lock
-        @loaded = true
-        RECURSIVE_LOCK.unlock
-        @readySignal.sendNext(true)
-        @changedSignal.sendNext(true)
-      end
-    end)
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
     @changedSignal = RACSubject.subject
     setup
-    check
+    RMXFirebase::SCHEDULER.schedule(-> {
+      @checkSubject.switchToLatest
+      .subscribeNext(RMX.safe_lambda do |s|
+        if check
+          # p "really ready"
+          RECURSIVE_LOCK.lock
+          @loaded = true
+          RECURSIVE_LOCK.unlock
+          @readySignal.sendNext(true)
+          @changedSignal.sendNext(true)
+        end
+      end)
+      check
+    })
   end
 
   def loaded?
@@ -62,7 +64,7 @@ class RMXFirebaseModel
   end
 
   def check
-    # p "check"
+    # p "check", RACScheduler.currentScheduler, RMX.mainThread?
     changed = false
     @deps.each_pair do |name, hash|
       opts = hash[:opts]
@@ -95,7 +97,7 @@ class RMXFirebaseModel
     end
     if changed
       # p "check send signals", @dep_signals.count
-      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects).subscribeOn(RACScheduler.scheduler))
+      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects).subscribeOn(RMXFirebase::SCHEDULER))
     end
     changed == false
   end

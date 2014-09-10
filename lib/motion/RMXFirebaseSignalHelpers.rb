@@ -6,7 +6,7 @@ module RMXFirebaseSignalHelpers
   # returns a RACDisposable
   def once(scheduler=nil, &block)
     @readySignal
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .take(1)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(->(v) {
@@ -22,7 +22,7 @@ module RMXFirebaseSignalHelpers
     sblock = RMX.safe_block(block)
     @readySignal
     .takeUntil(block.owner.rac_willDeallocSignal)
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(RMX.safe_lambda do |b|
       sblock.call(self)
@@ -37,7 +37,7 @@ module RMXFirebaseSignalHelpers
     sblock = RMX.safe_block(block)
     @changedSignal
     .takeUntil(block.owner.rac_willDeallocSignal)
-    .subscribeOn(RACScheduler.scheduler)
+    .subscribeOn(RMXFirebase::SCHEDULER)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
     .subscribeNext(RMX.safe_lambda do |b|
       sblock.call(self)
