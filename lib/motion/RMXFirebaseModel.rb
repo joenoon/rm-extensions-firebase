@@ -37,23 +37,23 @@ class RMXFirebaseModel
     @deps = {}
     @opts = opts
     @checkSubject = RACSubject.subject
-    @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
-    @changedSignal = RACSubject.subject
+    @readySubject = RACReplaySubject.replaySubjectWithCapacity(1)
+    @readySignal = @readySubject.subscribeOn(RMXFirebase.scheduler)
+    @changedSubject = RACSubject.subject
+    @changedSignal = @changedSubject.subscribeOn(RMXFirebase.scheduler)
     setup
-    RMXFirebase::SCHEDULER.schedule(-> {
-      @checkSubject.switchToLatest
-      .subscribeNext(RMX.safe_lambda do |s|
-        if check
-          # p "really ready"
-          RECURSIVE_LOCK.lock
-          @loaded = true
-          RECURSIVE_LOCK.unlock
-          @readySignal.sendNext(true)
-          @changedSignal.sendNext(true)
-        end
-      end)
-      check
-    })
+    @checkSubject.switchToLatest
+    .subscribeNext(RMX.safe_lambda do |s|
+      if check
+        # p "really ready"
+        RECURSIVE_LOCK.lock
+        @loaded = true
+        RECURSIVE_LOCK.unlock
+        @readySubject.sendNext(true)
+        @changedSubject.sendNext(true)
+      end
+    end)
+    check
   end
 
   def loaded?
@@ -97,7 +97,7 @@ class RMXFirebaseModel
     end
     if changed
       # p "check send signals", @dep_signals.count
-      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects).subscribeOn(RMXFirebase::SCHEDULER))
+      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects).subscribeOn(RMXFirebase.scheduler))
     end
     changed == false
   end

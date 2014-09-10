@@ -36,7 +36,9 @@ class FQuery
   end
   def self.rac_valueSignal(ref)
     RACSignal.createSignal(->(subscriber) {
+      # NSLog "lock1-1 #{object_id} #{NSThread.currentThread.description}"
       RECURSIVE_LOCK.lock
+      # NSLog "lock1-1a"
       hash = $firebase_valueSignals[ref.description] ||= {}
       hash[:numberOfValueSubscribers] ||= 0
       valueSubject = hash[:valueSubject] ||= RACReplaySubject.replaySubjectWithCapacity(1)
@@ -64,14 +66,14 @@ class FQuery
             ref.removeObserverWithHandle(valueHandler)
             # ref.p "removeObserverWithHandle", valueHandler
           else
-            p "MISSING EXPECTED valueHandler!"
+            NSLog("MISSING EXPECTED valueHandler!")
           end
           hash[:valueHandler] = nil
           hash[:valueSubject] = nil
         end
         RECURSIVE_LOCK.unlock
       })
-    })
+    }).subscribeOn(RMXFirebase.scheduler)
   end
 
   # ChildAdded sends [ curr, prev ]
@@ -96,7 +98,7 @@ class FQuery
       })
       RECURSIVE_LOCK.unlock
       dis
-    })
+    }).subscribeOn(RMXFirebase.scheduler)
   end
 
   # ChildMoved sends [ curr, prev ]
@@ -121,7 +123,7 @@ class FQuery
       })
       RECURSIVE_LOCK.unlock
       dis
-    })
+    }).subscribeOn(RMXFirebase.scheduler)
   end
 
   # ChildChanged sends [ curr, prev ]
@@ -146,7 +148,7 @@ class FQuery
       })
       RECURSIVE_LOCK.unlock
       dis
-    })
+    }).subscribeOn(RMXFirebase.scheduler)
   end
 
   # ChildRemoved sends curr
@@ -171,7 +173,7 @@ class FQuery
       })
       RECURSIVE_LOCK.unlock
       dis
-    })
+    }).subscribeOn(RMXFirebase.scheduler)
   end
 
   # once signals

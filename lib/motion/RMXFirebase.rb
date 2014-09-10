@@ -1,17 +1,17 @@
 module RMXFirebase
 
-  SCHEDULER = RACScheduler.scheduler
+  # RMXFirebase.scheduler is defined in obj-c code
 
-  def self.rac_schedulerFor(scheduler)
-    case scheduler
+  def self.rac_schedulerFor(_scheduler)
+    case _scheduler
     when nil, :main
       RACScheduler.mainThreadScheduler
     when :async
-      SCHEDULER
-    when RACScheduler
       scheduler
+    when RACScheduler
+      _scheduler
     else
-      raise "unknown scheduler: #{scheduler.inspect}"
+      raise "unknown scheduler: #{_scheduler.inspect}"
     end
   end
 
