@@ -1,6 +1,8 @@
 module RMXFirebase
 
-  # RMXFirebase.scheduler is defined in obj-c code
+  def self.scheduler
+    RMXRACHelper.schedulerWithHighPriority
+  end
 
   def self.rac_schedulerFor(_scheduler)
     case _scheduler
