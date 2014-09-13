@@ -1,6 +1,6 @@
 class FQuery
 
-  RECURSIVE_LOCK = NSRecursiveLock.new
+  LOCK = NSLock.new
 
   Dispatch.once do
     $firebase_valueSignals = {}
@@ -36,29 +36,27 @@ class FQuery
   end
   def self.rac_valueSignal(ref)
     RACSignal.createSignal(->(subscriber) {
-      # NSLog "lock1-1 #{object_id} #{NSThread.currentThread.description}"
-      RECURSIVE_LOCK.lock
-      # NSLog "lock1-1a"
+      LOCK.lock
       hash = $firebase_valueSignals[ref.description] ||= {}
       hash[:numberOfValueSubscribers] ||= 0
       valueSubject = hash[:valueSubject] ||= RACReplaySubject.replaySubjectWithCapacity(1)
       if hash[:numberOfValueSubscribers] == 0
         hash[:valueHandler] = ref.observeEventType(FEventTypeValue, withBlock:->(curr) {
-          RECURSIVE_LOCK.lock
+          LOCK.lock
           valueSubject.sendNext(curr)
-          RECURSIVE_LOCK.unlock
+          LOCK.unlock
         }, withCancelBlock:->(err) {
-          RECURSIVE_LOCK.lock
+          LOCK.lock
           valueSubject.sendError(err)
-          RECURSIVE_LOCK.unlock
+          LOCK.unlock
         })
         # ref.p "observeEventType", hash[:valueHandler]
       end
       hash[:numberOfValueSubscribers] += 1
       valueSubjectDisposable = valueSubject.subscribe(subscriber)
-      RECURSIVE_LOCK.unlock
+      LOCK.unlock
       RACDisposable.disposableWithBlock(-> {
-        RECURSIVE_LOCK.lock
+        LOCK.lock
         valueSubjectDisposable.dispose
         hash[:numberOfValueSubscribers] -= 1
         if hash[:numberOfValueSubscribers] == 0
@@ -71,7 +69,7 @@ class FQuery
           hash[:valueHandler] = nil
           hash[:valueSubject] = nil
         end
-        RECURSIVE_LOCK.unlock
+        LOCK.unlock
       })
     }).subscribeOn(RMXFirebase.scheduler)
   end
@@ -82,7 +80,7 @@ class FQuery
   end
   def self.rac_addedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      RECURSIVE_LOCK.lock
+      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildAdded, andPreviousSiblingNameWithBlock:->(curr, prev) {
         subscriber.sendNext([ curr, prev ])
       }, withCancelBlock:->(err) {
@@ -91,12 +89,12 @@ class FQuery
       # NSLog("rac_addedSignal #{description} handler: #{handler}")
 
       dis = RACDisposable.disposableWithBlock(-> {
-        RECURSIVE_LOCK.lock
+        LOCK.lock
         # NSLog("rac_addedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        RECURSIVE_LOCK.unlock
+        LOCK.unlock
       })
-      RECURSIVE_LOCK.unlock
+      LOCK.unlock
       dis
     }).subscribeOn(RMXFirebase.scheduler)
   end
@@ -107,7 +105,7 @@ class FQuery
   end
   def self.rac_movedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      RECURSIVE_LOCK.lock
+      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildMoved, andPreviousSiblingNameWithBlock:->(curr, prev) {
         subscriber.sendNext([ curr, prev ])
       }, withCancelBlock:->(err) {
@@ -116,12 +114,12 @@ class FQuery
       # NSLog("rac_movedSignal #{description} handler: #{handler}")
 
       dis = RACDisposable.disposableWithBlock(-> {
-        RECURSIVE_LOCK.lock
+        LOCK.lock
         # NSLog("rac_movedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        RECURSIVE_LOCK.unlock
+        LOCK.unlock
       })
-      RECURSIVE_LOCK.unlock
+      LOCK.unlock
       dis
     }).subscribeOn(RMXFirebase.scheduler)
   end
@@ -132,7 +130,7 @@ class FQuery
   end
   def self.rac_changedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      RECURSIVE_LOCK.lock
+      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildChanged, andPreviousSiblingNameWithBlock:->(curr, prev) {
         subscriber.sendNext([ curr, prev ])
       }, withCancelBlock:->(err) {
@@ -141,12 +139,12 @@ class FQuery
       # NSLog("rac_changedSignal #{description} handler: #{handler}")
 
       dis = RACDisposable.disposableWithBlock(-> {
-        RECURSIVE_LOCK.lock
+        LOCK.lock
         # NSLog("rac_changedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        RECURSIVE_LOCK.unlock
+        LOCK.unlock
       })
-      RECURSIVE_LOCK.unlock
+      LOCK.unlock
       dis
     }).subscribeOn(RMXFirebase.scheduler)
   end
@@ -157,7 +155,7 @@ class FQuery
   end
   def self.rac_removedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      RECURSIVE_LOCK.lock
+      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildRemoved, withBlock:->(curr) {
         subscriber.sendNext(curr)
       }, withCancelBlock:->(err) {
@@ -166,12 +164,12 @@ class FQuery
       # NSLog("rac_removedSignal #{description} handler: #{handler}")
 
       dis = RACDisposable.disposableWithBlock(-> {
-        RECURSIVE_LOCK.lock
+        LOCK.lock
         # NSLog("rac_removedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        RECURSIVE_LOCK.unlock
+        LOCK.unlock
       })
-      RECURSIVE_LOCK.unlock
+      LOCK.unlock
       dis
     }).subscribeOn(RMXFirebase.scheduler)
   end

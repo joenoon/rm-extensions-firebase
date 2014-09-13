@@ -13,7 +13,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   def modelsSignal
     RACSignal.createSignal(->(subscriber) {
-      RECURSIVE_LOCK.lock
+      @lock.lock
       hash = @modelsSignalInfo
       hash[:numberOfSubscribers] ||= 0
       subject = hash[:subject] ||= RACReplaySubject.replaySubjectWithCapacity(1)
@@ -21,13 +21,11 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
         hash[:handler] = @readySignal
         .takeUntil(rac_willDeallocSignal)
         .subscribeNext(RMX.safe_lambda do |x|
-          RECURSIVE_LOCK.lock
           snaps = order == :desc ? childrenArray.reverse : childrenArray
           names = snaps.map(&:name)
           items = snaps.map { |s| store_transform(s) }
           purge_transforms_not_in_names(names)
           signals = items.map(&:readySignal)
-          RECURSIVE_LOCK.unlock
           RACSignal.combineLatestOrEmpty(signals)
           .take(1)
           .flattenMap(->(tuple) {
@@ -41,9 +39,9 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       end
       hash[:numberOfSubscribers] += 1
       subjectDisposable = subject.subscribe(subscriber)
-      RECURSIVE_LOCK.unlock
+      @lock.unlock
       RACDisposable.disposableWithBlock(-> {
-        RECURSIVE_LOCK.lock
+        @lock.lock
         subjectDisposable.dispose
         hash[:numberOfSubscribers] -= 1
         if hash[:numberOfSubscribers] == 0
@@ -56,7 +54,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
           hash[:handler] = nil
           hash[:subject] = nil
         end
-        RECURSIVE_LOCK.unlock
+        @lock.unlock
       })
     }).subscribeOn(RMXFirebase.scheduler)
   end
@@ -104,6 +102,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     super
     @modelsSignalInfo = {}
     @models = {}
+    @lock = NSLock.new
   end
 
   def store_transform(snap)
@@ -206,16 +205,9 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   # order will affect future passes through modelsSignal, so set it before
   # using modelsSignal (i.e. always_models, changed_models, once_models)
   def order=(order)
-    RECURSIVE_LOCK.lock
+    @lock.lock
     @order = order
-    RECURSIVE_LOCK.unlock
-  end
-
-  def order
-    RECURSIVE_LOCK.lock
-    res = @order
-    RECURSIVE_LOCK.unlock
-    res
+    @lock.unlock
   end
 
 end

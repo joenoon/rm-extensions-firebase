@@ -1,11 +1,9 @@
 class RMXFirebaseLiveshot
 
-  RECURSIVE_LOCK = NSRecursiveLock.new
-
   include RMXCommonMethods
 
   def rmx_object_desc
-    "#{super}:#{r = ref and r.description}"
+    "#{super}:#{@ref_description}"
   end
 
   include RMXFirebaseSignalHelpers
@@ -24,7 +22,11 @@ class RMXFirebaseLiveshot
   def initialize(ref)
     RMX.log_dealloc(self)
 
-    @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
+    @lock = NSLock.new
+    # @lock.name = "lock:#{rmx_object_desc}"
+
+    @readySubject = RACReplaySubject.replaySubjectWithCapacity(1)
+    @readySignal = @readySubject.subscribeOn(RMXFirebase.scheduler)
     @changedSignal = RACSubject.subject
     @refSignal = RACSubject.subject
 
@@ -37,17 +39,18 @@ class RMXFirebaseLiveshot
   end
 
   def ref=(ref)
-    RECURSIVE_LOCK.lock
+    @lock.lock
     @ref = ref
-    RECURSIVE_LOCK.unlock
+    @ref_description = ref.description
+    @lock.unlock
     @refSignal.sendNext(ref.rac_valueSignal)
   end
 
   # ref this Liveshot is observing
   def ref
-    RECURSIVE_LOCK.lock
+    @lock.lock
     res = @ref
-    RECURSIVE_LOCK.unlock
+    @lock.unlock
     res
   end
 
@@ -56,18 +59,18 @@ class RMXFirebaseLiveshot
   end
 
   def snap=(snap)
-    RECURSIVE_LOCK.lock
+    @lock.lock
     @snap = snap
-    RECURSIVE_LOCK.unlock
-    @readySignal.sendNext(true)
+    @lock.unlock
+    @readySubject.sendNext(true)
     @changedSignal.sendNext(true)
     snap
   end
 
   def snap
-    RECURSIVE_LOCK.lock
+    @lock.lock
     res = @snap
-    RECURSIVE_LOCK.unlock
+    @lock.unlock
     res
   end
 

@@ -1,8 +1,6 @@
 # to get models to show up in Instruments, for some reason need to < UIResponder 
 class RMXFirebaseModel
 
-  RECURSIVE_LOCK = NSRecursiveLock.new
-  
   include RMXCommonMethods
   include RMXFirebaseSignalHelpers
   
@@ -33,6 +31,7 @@ class RMXFirebaseModel
 
   def initialize(opts=nil)
     RMX.log_dealloc(self)
+    @lock = NSLock.new
     @dep_signals = NSMutableSet.new
     @deps = {}
     @opts = opts
@@ -46,9 +45,9 @@ class RMXFirebaseModel
     .subscribeNext(RMX.safe_lambda do |s|
       if check
         # p "really ready"
-        RECURSIVE_LOCK.lock
+        @lock.lock
         @loaded = true
-        RECURSIVE_LOCK.unlock
+        @lock.unlock
         @readySubject.sendNext(true)
         @changedSubject.sendNext(true)
       end
@@ -57,9 +56,9 @@ class RMXFirebaseModel
   end
 
   def loaded?
-    RECURSIVE_LOCK.lock
+    @lock.lock
     res = !!@loaded
-    RECURSIVE_LOCK.unlock
+    @lock.unlock
     res
   end
 
@@ -123,7 +122,7 @@ class RMXFirebaseModel
   end
 
   def fullValue
-    RECURSIVE_LOCK.lock
+    @lock.lock
     res = @deps.keys.inject({}) do |ret, k|
       if dep = @deps[k]
         if v = dep[:value]
@@ -132,7 +131,7 @@ class RMXFirebaseModel
       end
       ret
     end
-    RECURSIVE_LOCK.unlock
+    @lock.unlock
     res
   end
 
