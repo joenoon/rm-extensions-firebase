@@ -1,7 +1,5 @@
 class FQuery
 
-  LOCK = NSLock.new
-
   Dispatch.once do
     $firebase_valueSignals = {}
   end
@@ -36,27 +34,20 @@ class FQuery
   end
   def self.rac_valueSignal(ref)
     RACSignal.createSignal(->(subscriber) {
-      LOCK.lock
       hash = $firebase_valueSignals[ref.description] ||= {}
       hash[:numberOfValueSubscribers] ||= 0
       valueSubject = hash[:valueSubject] ||= RACReplaySubject.replaySubjectWithCapacity(1)
       if hash[:numberOfValueSubscribers] == 0
         hash[:valueHandler] = ref.observeEventType(FEventTypeValue, withBlock:->(curr) {
-          LOCK.lock
           valueSubject.sendNext(curr)
-          LOCK.unlock
         }, withCancelBlock:->(err) {
-          LOCK.lock
           valueSubject.sendError(err)
-          LOCK.unlock
         })
         # ref.p "observeEventType", hash[:valueHandler]
       end
       hash[:numberOfValueSubscribers] += 1
       valueSubjectDisposable = valueSubject.subscribe(subscriber)
-      LOCK.unlock
       RACDisposable.disposableWithBlock(-> {
-        LOCK.lock
         valueSubjectDisposable.dispose
         hash[:numberOfValueSubscribers] -= 1
         if hash[:numberOfValueSubscribers] == 0
@@ -69,7 +60,6 @@ class FQuery
           hash[:valueHandler] = nil
           hash[:valueSubject] = nil
         end
-        LOCK.unlock
       })
     }).subscribeOn(RMXFirebase.scheduler)
   end
@@ -80,7 +70,6 @@ class FQuery
   end
   def self.rac_addedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildAdded, andPreviousSiblingNameWithBlock:->(curr, prev) {
         subscriber.sendNext([ curr, prev ])
       }, withCancelBlock:->(err) {
@@ -88,14 +77,10 @@ class FQuery
       })
       # NSLog("rac_addedSignal #{description} handler: #{handler}")
 
-      dis = RACDisposable.disposableWithBlock(-> {
-        LOCK.lock
+      RACDisposable.disposableWithBlock(-> {
         # NSLog("rac_addedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        LOCK.unlock
       })
-      LOCK.unlock
-      dis
     }).subscribeOn(RMXFirebase.scheduler)
   end
 
@@ -105,7 +90,6 @@ class FQuery
   end
   def self.rac_movedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildMoved, andPreviousSiblingNameWithBlock:->(curr, prev) {
         subscriber.sendNext([ curr, prev ])
       }, withCancelBlock:->(err) {
@@ -113,14 +97,10 @@ class FQuery
       })
       # NSLog("rac_movedSignal #{description} handler: #{handler}")
 
-      dis = RACDisposable.disposableWithBlock(-> {
-        LOCK.lock
+      RACDisposable.disposableWithBlock(-> {
         # NSLog("rac_movedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        LOCK.unlock
       })
-      LOCK.unlock
-      dis
     }).subscribeOn(RMXFirebase.scheduler)
   end
 
@@ -130,7 +110,6 @@ class FQuery
   end
   def self.rac_changedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildChanged, andPreviousSiblingNameWithBlock:->(curr, prev) {
         subscriber.sendNext([ curr, prev ])
       }, withCancelBlock:->(err) {
@@ -138,14 +117,10 @@ class FQuery
       })
       # NSLog("rac_changedSignal #{description} handler: #{handler}")
 
-      dis = RACDisposable.disposableWithBlock(-> {
-        LOCK.lock
+      RACDisposable.disposableWithBlock(-> {
         # NSLog("rac_changedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        LOCK.unlock
       })
-      LOCK.unlock
-      dis
     }).subscribeOn(RMXFirebase.scheduler)
   end
 
@@ -155,7 +130,6 @@ class FQuery
   end
   def self.rac_removedSignal(ref)
     RACSignal.createSignal(-> (subscriber) {
-      LOCK.lock
       handler = ref.observeEventType(FEventTypeChildRemoved, withBlock:->(curr) {
         subscriber.sendNext(curr)
       }, withCancelBlock:->(err) {
@@ -163,14 +137,10 @@ class FQuery
       })
       # NSLog("rac_removedSignal #{description} handler: #{handler}")
 
-      dis = RACDisposable.disposableWithBlock(-> {
-        LOCK.lock
+      RACDisposable.disposableWithBlock(-> {
         # NSLog("rac_removedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
         ref.removeObserverWithHandle(handler)
-        LOCK.unlock
       })
-      LOCK.unlock
-      dis
     }).subscribeOn(RMXFirebase.scheduler)
   end
 

@@ -1,5 +1,7 @@
 class RMXFirebaseCollection < RMXFirebaseLiveshot
 
+  # order will affect future passes through modelsSignal, so set it before
+  # using modelsSignal (i.e. always_models, changed_models, once_models)
   attr_accessor :order
 
   # public, override required
@@ -13,7 +15,6 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   def modelsSignal
     RACSignal.createSignal(->(subscriber) {
-      @lock.lock
       hash = @modelsSignalInfo
       hash[:numberOfSubscribers] ||= 0
       subject = hash[:subject] ||= RACReplaySubject.replaySubjectWithCapacity(1)
@@ -39,9 +40,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       end
       hash[:numberOfSubscribers] += 1
       subjectDisposable = subject.subscribe(subscriber)
-      @lock.unlock
       RACDisposable.disposableWithBlock(-> {
-        @lock.lock
         subjectDisposable.dispose
         hash[:numberOfSubscribers] -= 1
         if hash[:numberOfSubscribers] == 0
@@ -54,7 +53,6 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
           hash[:handler] = nil
           hash[:subject] = nil
         end
-        @lock.unlock
       })
     }).subscribeOn(RMXFirebase.scheduler)
   end
@@ -102,7 +100,6 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     super
     @modelsSignalInfo = {}
     @models = {}
-    @lock = NSLock.new
   end
 
   def store_transform(snap)
@@ -200,14 +197,6 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       new_ref = r.limited(num)
       self.ref = new_ref
     end
-  end
-
-  # order will affect future passes through modelsSignal, so set it before
-  # using modelsSignal (i.e. always_models, changed_models, once_models)
-  def order=(order)
-    @lock.lock
-    @order = order
-    @lock.unlock
   end
 
 end
