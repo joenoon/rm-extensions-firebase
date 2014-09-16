@@ -42,7 +42,7 @@ class RMXFirebaseModel
     @changedSignal = @changedSubject.subscribeOn(RMXFirebase.scheduler)
     setup
     @checkSubject.switchToLatest
-    .subscribeNext(RMX.safe_lambda do |s|
+    .subscribeNext(->(s) {
       if check
         # p "really ready"
         @lock.lock
@@ -51,7 +51,7 @@ class RMXFirebaseModel
         @readySubject.sendNext(true)
         @changedSubject.sendNext(true)
       end
-    end)
+    }.rmx_weak!)
     check
   end
 

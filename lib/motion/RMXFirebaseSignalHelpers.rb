@@ -18,13 +18,13 @@ module RMXFirebaseSignalHelpers
   # takes optional RACScheduler (mainThreadScheduler is default).
   # returns a RACDisposable
   def always(scheduler=nil, &block)
-    sblock = RMX.safe_block(block)
+    sblock = block.rmx_weak!
     @readySignal
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
-    .subscribeNext(RMX.safe_lambda do |b|
+    .subscribeNext(->(b) {
       sblock.call(self)
-    end)
+    }.rmx_weak!)
   end
 
   # completes with `self` every time the model changes.
@@ -32,13 +32,13 @@ module RMXFirebaseSignalHelpers
   # takes optional RACScheduler (mainThreadScheduler is default).
   # returns a RACDisposable
   def changed(scheduler=nil, &block)
-    sblock = RMX.safe_block(block)
+    sblock = block.rmx_weak!
     @changedSignal
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
-    .subscribeNext(RMX.safe_lambda do |b|
+    .subscribeNext(->(b) {
       sblock.call(self)
-    end)
+    }.rmx_weak!)
   end
 
 end

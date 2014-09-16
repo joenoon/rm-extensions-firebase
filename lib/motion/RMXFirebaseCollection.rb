@@ -21,7 +21,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       if hash[:numberOfSubscribers] == 0
         hash[:handler] = @readySignal
         .takeUntil(rac_willDeallocSignal)
-        .subscribeNext(RMX.safe_lambda do |x|
+        .subscribeNext(->(x) {
           snaps = order == :desc ? childrenArray.reverse : childrenArray
           names = snaps.map(&:name)
           items = snaps.map { |s| store_transform(s) }
@@ -32,10 +32,10 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
           .flattenMap(->(tuple) {
             RACSignal.return(tuple.allObjects)
           })
-          .subscribeNext(RMX.safe_lambda do |bools|
+          .subscribeNext(->(bools) {
             subject.sendNext(items)
-          end)
-        end)
+          }.rmx_weak!)
+        }.rmx_weak!)
         # ref.p "observeEventType", hash[:valueHandler]
       end
       hash[:numberOfSubscribers] += 1
@@ -61,9 +61,9 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     RACSignal.createSignal(->(subscriber) {
       disposable = @readySignal
       .then(ref.rac_addedSignal)
-      .subscribeNext(RMX.safe_lambda do |pair|
+      .subscribeNext(->(pair) {
         subscriber.sendNext([ store_transform(pair[0]), pair[1] ])
-      end)
+      }.rmx_weak!)
       RACDisposable.disposableWithBlock(-> {
         disposable.dispose
       })
@@ -74,9 +74,9 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     RACSignal.createSignal(->(subscriber) {
       disposable = @readySignal
       .then(ref.rac_removedSignal)
-      .subscribeNext(RMX.safe_lambda do |s|
+      .subscribeNext(->(s) {
         subscriber.sendNext(s)
-      end)
+      }.rmx_weak!)
       RACDisposable.disposableWithBlock(-> {
         disposable.dispose
       })
@@ -87,9 +87,9 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     RACSignal.createSignal(->(subscriber) {
       disposable = @readySignal
       .then(ref.rac_movedSignal)
-      .subscribeNext(RMX.safe_lambda do |pair|
+      .subscribeNext(->(pair) {
         subscriber.sendNext([ store_transform(pair[0]), pair[1] ])
-      end)
+      }.rmx_weak!)
       RACDisposable.disposableWithBlock(-> {
         disposable.dispose
       })
@@ -133,7 +133,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   # takes optional RACScheduler (mainThreadScheduler is default).
   # returns a RACDisposable
   def always_models(scheduler=nil, &block)
-    sblock = RMX.safe_lambda(block)
+    sblock = block.rmx_weak!
     modelsSignal
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
@@ -145,7 +145,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   # takes optional RACScheduler (mainThreadScheduler is default).
   # returns a RACDisposable
   def changed_models(scheduler=nil, &block)
-    sblock = RMX.safe_lambda(block)
+    sblock = block.rmx_weak!
     modelsSignal
     .skip(1)
     .takeUntil(block.owner.rac_willDeallocSignal)
@@ -158,7 +158,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   # takes optional RACScheduler (mainThreadScheduler is default).
   # returns a RACDisposable
   def added_model(scheduler=nil, &block)
-    sblock = RMX.safe_lambda(block)
+    sblock = block.rmx_weak!
     addedSignal
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
@@ -170,7 +170,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   # takes optional RACScheduler (mainThreadScheduler is default).
   # returns a RACDisposable
   def removed_model(scheduler=nil, &block)
-    sblock = RMX.safe_lambda(block)
+    sblock = block.rmx_weak!
     removedSignal
     .takeUntil(block.owner.rac_willDeallocSignal)
     .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))

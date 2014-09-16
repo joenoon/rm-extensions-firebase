@@ -32,9 +32,9 @@ class RMXFirebaseLiveshot
 
     @refSignal.switchToLatest
     .takeUntil(rac_willDeallocSignal)
-    .subscribeNext(RMX.safe_lambda do |snap|
+    .subscribeNext(->(snap) {
       self.snap = snap
-    end)
+    }.rmx_weak!)
     self.ref = ref
   end
 
