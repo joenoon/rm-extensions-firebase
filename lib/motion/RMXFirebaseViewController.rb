@@ -34,7 +34,7 @@ class RMXFirebaseViewController < RMXViewController
     if @model
       @model_unbinder = @model.always do
         if isViewLoaded
-          @model.loaded? ? changed : pending
+          @model.ready? ? changed : pending
         else
           @pending_changed = true
         end

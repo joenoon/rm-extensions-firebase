@@ -58,6 +58,10 @@ class RMXFirebaseLiveshot
     !!snap
   end
 
+  def ready?
+    loaded? && hasValue?
+  end
+
   def snap=(snap)
     @lock.lock
     @snap = snap

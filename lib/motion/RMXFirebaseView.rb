@@ -26,7 +26,7 @@ class RMXFirebaseView < RMXView
     reset
     if @model
       @model_unbinder = @model.always do
-        @model.loaded? ? changed : pending
+        @model.ready? ? changed : pending
       end
     end
     @model

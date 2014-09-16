@@ -27,7 +27,7 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
     @model = val
     if @model
       @model_unbinder = @model.always do
-        @model.loaded? ? changed : pending
+        @model.ready? ? changed : pending
       end
     end
     @model

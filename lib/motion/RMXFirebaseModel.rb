@@ -62,6 +62,10 @@ class RMXFirebaseModel
     res
   end
 
+  def ready?
+    loaded? && hasValue?
+  end
+
   def check
     # p "check", RACScheduler.currentScheduler, RMX.mainThread?
     changed = false

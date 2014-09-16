@@ -40,7 +40,7 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
         @model = nil
       else
         @model_unbinder = @model.always do
-          @model.loaded? ? changed : pending
+          @model.ready? ? changed : pending
         end
       end
     end
