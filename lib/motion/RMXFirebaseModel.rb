@@ -42,6 +42,7 @@ class RMXFirebaseModel
     @changedSignal = @changedSubject.subscribeOn(RMXFirebase.scheduler)
     setup
     @checkSubject.switchToLatest
+    .takeUntil(rac_willDeallocSignal)
     .subscribeNext(->(s) {
       if check
         # p "really ready"
