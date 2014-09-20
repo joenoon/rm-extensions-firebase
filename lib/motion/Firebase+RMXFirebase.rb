@@ -32,4 +32,20 @@ class Firebase
     end
   end
 
+  # will sendNext with authData or error
+  def rmx_authWithCredentialSignal(firebase_auth)
+    RACSignal.createSignal(->(subscriber) {
+      authWithCredential(firebase_auth, withCompletionBlock:->(error, authData) {
+        if error
+          subscriber.sendError(error)
+        else
+          subscriber.sendNext(authData)
+        end
+      }, withCancelBlock:->(error) {
+        subscriber.sendError(error)
+      })
+      nil
+    })
+  end
+
 end
