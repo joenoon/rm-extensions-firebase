@@ -25,8 +25,7 @@ class RMXFirebaseLiveshot
     @lock = NSLock.new
     # @lock.name = "lock:#{rmx_object_desc}"
 
-    @readySubject = RACReplaySubject.replaySubjectWithCapacity(1)
-    @readySignal = @readySubject.subscribeOn(RMXFirebase.scheduler)
+    @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
     @changedSignal = RACSubject.subject
     @refSignal = RACSubject.subject
 
@@ -66,7 +65,7 @@ class RMXFirebaseLiveshot
     @lock.lock
     @snap = snap
     @lock.unlock
-    @readySubject.sendNext(true)
+    @readySignal.sendNext(true)
     @changedSignal.sendNext(true)
     snap
   end

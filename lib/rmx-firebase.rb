@@ -14,7 +14,6 @@ Motion::Project::App.setup do |app|
     RMXFirebaseSignalHelpers
     RMXFirebaseLiveshot
     RMXFirebaseModel
-    RMXFirebaseBatch
     RMXFirebaseCollection
     RMXFirebaseHandleModel
     RMXFirebaseTableViewCell

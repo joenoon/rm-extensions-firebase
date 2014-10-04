@@ -36,10 +36,8 @@ class RMXFirebaseModel
     @deps = {}
     @opts = opts
     @checkSubject = RACSubject.subject
-    @readySubject = RACReplaySubject.replaySubjectWithCapacity(1)
-    @readySignal = @readySubject.subscribeOn(RMXFirebase.scheduler)
-    @changedSubject = RACSubject.subject
-    @changedSignal = @changedSubject.subscribeOn(RMXFirebase.scheduler)
+    @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
+    @changedSignal = RACSubject.subject
     setup
     @checkSubject.switchToLatest
     .takeUntil(rac_willDeallocSignal)
@@ -49,8 +47,8 @@ class RMXFirebaseModel
         @lock.lock
         @loaded = true
         @lock.unlock
-        @readySubject.sendNext(true)
-        @changedSubject.sendNext(true)
+        @readySignal.sendNext(true)
+        @changedSignal.sendNext(true)
       end
     }.rmx_weak!)
     check
@@ -101,7 +99,7 @@ class RMXFirebaseModel
     end
     if changed
       # p "check send signals", @dep_signals.count
-      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects).subscribeOn(RMXFirebase.scheduler))
+      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects))
     end
     changed == false
   end

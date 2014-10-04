@@ -3,10 +3,7 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
   extend RMXFirebaseHandleModel
 
   def prepareForReuse
-    if @model
-      @model_unbinder.dispose if @model_unbinder
-      @model_unbinder = nil
-    end
+    unbind_model
     @model = nil
     reset
   end
@@ -16,6 +13,11 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
 
   def pending
     reset
+  end
+
+  def unbind_model
+    @model_unbinder.dispose if @model_unbinder
+    @model_unbinder = nil
   end
 
   def model
@@ -31,17 +33,22 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
         changed
         @sizerModels ||= {}
         @sizerModels[@model] ||= begin
-          @model.changed do |m|
+          @model.weakChangedMainSignal
+          .takeUntil(rac_willDeallocSignal)
+          .subscribeNext(->(m) {
             if th = tableHandler
               th.invalidateHeightForData(m, reuseIdentifier:sizerCellReuseIdentifier)
             end
-          end
+          }.rmx_weak!)
         end
         @model = nil
       else
-        @model_unbinder = @model.always do |m|
+        unbind_model
+        @model_unbinder = @model.weakAlwaysMainSignal
+        .takeUntil(rac_willDeallocSignal)
+        .subscribeNext(->(m) {
           m.ready? ? changed : pending
-        end
+        }.rmx_weak!)
       end
     end
     @model

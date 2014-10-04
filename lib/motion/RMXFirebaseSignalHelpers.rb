@@ -1,44 +1,71 @@
 module RMXFirebaseSignalHelpers
 
-  # completes with `self` once, when or if the model is loaded.
-  # takes optional RACScheduler (mainThreadScheduler is default).
-  # retains `self` and the sender until complete
-  # returns a RACDisposable
-  def once(scheduler=nil, &block)
-    @readySignal
-    .take(1)
-    .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
-    .subscribeNext(->(v) {
-      block.call(self)
-    })
+  # always
+  def weakAlwaysSignal
+    readySignal.takeUntil(rac_willDeallocSignal).map(->(x) { self }.rmx_unsafe!)
   end
 
-  # completes with `self` any time the model is loaded or changed.
-  # does not retain `self` or the sender.
-  # takes optional RACScheduler (mainThreadScheduler is default).
-  # returns a RACDisposable
-  def always(scheduler=nil, &block)
-    sblock = block.rmx_weak!
-    @readySignal
-    .takeUntil(block.owner.rac_willDeallocSignal)
-    .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
-    .subscribeNext(->(b) {
-      sblock.call(self)
-    }.rmx_weak!)
+  def weakAlwaysMainSignal
+    weakAlwaysSignal.deliverOn(RACScheduler.mainThreadScheduler)
   end
 
-  # completes with `self` every time the model changes.
-  # does not retain `self` or the sender.
-  # takes optional RACScheduler (mainThreadScheduler is default).
-  # returns a RACDisposable
-  def changed(scheduler=nil, &block)
-    sblock = block.rmx_weak!
-    @changedSignal
-    .takeUntil(block.owner.rac_willDeallocSignal)
-    .deliverOn(RMXFirebase.rac_schedulerFor(scheduler))
-    .subscribeNext(->(b) {
-      sblock.call(self)
-    }.rmx_weak!)
+  def strongAlwaysSignal
+    readySignal.mapReplace(self)
+  end
+
+  def strongAlwaysMainSignal
+    strongAlwaysSignal.deliverOn(RACScheduler.mainThreadScheduler)
+  end
+
+  # once
+  def weakOnceSignal
+    weakAlwaysSignal.take(1)
+  end
+
+  def weakOnceMainSignal
+    weakOnceSignal.deliverOn(RACScheduler.mainThreadScheduler)
+  end
+
+  def strongOnceSignal
+    strongAlwaysSignal.take(1)
+  end
+
+  def strongOnceMainSignal
+    strongOnceSignal.deliverOn(RACScheduler.mainThreadScheduler)
+  end
+
+  # changed
+  def weakChangedSignal
+    changedSignal.takeUntil(rac_willDeallocSignal).map(->(x) { self }.rmx_unsafe!)
+  end
+
+  def weakChangedMainSignal
+    weakChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+  end
+
+  def strongChangedSignal
+    changedSignal.mapReplace(self)
+  end
+
+  def strongChangedMainSignal
+    strongChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+  end
+
+  # changed once
+  def weakOnceChangedSignal
+    weakChangedSignal.take(1)
+  end
+
+  def weakOnceChangedMainSignal
+    weakOnceChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+  end
+
+  def strongOnceChangedSignal
+    strongChangedSignal.take(1)
+  end
+
+  def strongOnceChangedMainSignal
+    strongOnceChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
   end
 
 end

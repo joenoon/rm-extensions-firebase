@@ -25,9 +25,11 @@ class RMXFirebaseView < RMXView
     @model = val
     reset
     if @model
-      @model_unbinder = @model.always do |m|
+      @model_unbinder = @model.weakAlwaysMainSignal
+      .takeUntil(rac_willDeallocSignal)
+      .subscribeNext(->(m) {
         m.ready? ? changed : pending
-      end
+      }.rmx_weak!)
     end
     @model
   end

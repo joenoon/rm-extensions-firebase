@@ -32,13 +32,15 @@ class RMXFirebaseViewController < RMXViewController
     end
     @model = val
     if @model
-      @model_unbinder = @model.always do |m|
+      @model_unbinder = @model.weakAlwaysMainSignal
+      .takeUntil(rac_willDeallocSignal)
+      .subscribeNext(->(m) {
         if isViewLoaded
           m.ready? ? changed : pending
         else
           @pending_changed = true
         end
-      end
+      }.rmx_weak!)
     end
     @model
   end
