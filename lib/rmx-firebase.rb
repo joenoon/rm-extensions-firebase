@@ -7,7 +7,6 @@ end
 Motion::Project::App.setup do |app|
   index = app.files.rindex { |x| x.index("/RMX") }
   %w(
-    Firebase+RMXFirebase
     FQuery+RMXFirebase
     FDataSnapshot+RMXFirebase
     RMXFirebase

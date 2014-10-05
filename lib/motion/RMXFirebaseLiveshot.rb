@@ -1,11 +1,5 @@
 class RMXFirebaseLiveshot
 
-  include RMXCommonMethods
-
-  def rmx_object_desc
-    "#{super}:#{@ref_description}"
-  end
-
   include RMXFirebaseSignalHelpers
 
   # readySignal will next true when:
@@ -23,7 +17,7 @@ class RMXFirebaseLiveshot
     RMX.log_dealloc(self)
 
     @lock = NSLock.new
-    # @lock.name = "lock:#{rmx_object_desc}"
+    # @lock.name = "lock:#{description}"
 
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
     @changedSignal = RACSubject.subject
@@ -40,7 +34,7 @@ class RMXFirebaseLiveshot
   def ref=(ref)
     @lock.lock
     @ref = ref
-    @ref_description = ref.description
+    @ref_description = ref.ref_description
     @lock.unlock
     @refSignal.sendNext(ref.rac_valueSignal)
   end
@@ -51,6 +45,10 @@ class RMXFirebaseLiveshot
     res = @ref
     @lock.unlock
     res
+  end
+
+  def ref_description
+    @ref_description
   end
 
   def loaded?

@@ -116,7 +116,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
         new_ref = r.limited(new_limit)
         self.ref = new_ref
       else
-        NSLog("#{className}#limitIncrBy WARNING: tried to increament a non-existent limit for #{r.description}")
+        NSLog("#{className}#limitIncrBy WARNING: tried to increament a non-existent limit for #{r.ref_description}")
       end
     end
   end

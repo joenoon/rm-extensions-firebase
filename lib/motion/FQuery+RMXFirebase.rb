@@ -1,26 +1,34 @@
 class FQuery
 
-  Dispatch.once do
-    $firebase_valueSignals = {}
-  end
-
-  def rmx_object_desc
-    "#{super}:#{description}"
+  def [](*names)
+    if names.length == 0
+      childByAutoId
+    else
+      childByAppendingPath(names.join('/'))
+    end
   end
 
   def limited(limit)
     queryLimitedToNumberOfChildren(limit)
   end
 
-  def starting_at(priority)
-    queryStartingAtPriority(priority)
+  def starting_at(priority, child_name=nil)
+    if child_name
+      queryStartingAtPriority(priority, andChildName:child_name)
+    else
+      queryStartingAtPriority(priority)
+    end
   end
 
-  def ending_at(priority)
-    queryEndingAtPriority(priority)
+  def ending_at(priority, child_name=nil)
+    if child_name
+      queryEndingAtPriority(priority, andChildName:child_name)
+    else
+      queryEndingAtPriority(priority)
+    end
   end
 
-  def description
+  def ref_description
     "https://#{repo.repoInfo.host}#{path.toString}##{queryParams.queryIdentifier}"
   end
 
@@ -30,139 +38,94 @@ class FQuery
 
   # Value sends curr
   def rac_valueSignal
-    self.class.rac_valueSignal(self)
-  end
-  def self.rac_valueSignal(ref)
     RACSignal.createSignal(->(subscriber) {
-      hash = $firebase_valueSignals[ref.description] ||= {}
-      hash[:numberOfValueSubscribers] ||= 0
-      valueSubject = hash[:valueSubject] ||= RACReplaySubject.replaySubjectWithCapacity(1)
-      if hash[:numberOfValueSubscribers] == 0
-        hash[:valueHandler] = ref.observeEventType(FEventTypeValue, withBlock:->(curr) {
-          valueSubject.sendNext(curr)
-        }, withCancelBlock:->(err) {
-          valueSubject.sendError(err)
-        })
-        # ref.p "observeEventType", hash[:valueHandler]
-      end
-      hash[:numberOfValueSubscribers] += 1
-      valueSubjectDisposable = valueSubject.subscribe(subscriber)
-      RACDisposable.disposableWithBlock(-> {
-        valueSubjectDisposable.dispose
-        hash[:numberOfValueSubscribers] -= 1
-        if hash[:numberOfValueSubscribers] == 0
-          if valueHandler = hash[:valueHandler]
-            ref.removeObserverWithHandle(valueHandler)
-            # ref.p "removeObserverWithHandle", valueHandler
-          else
-            NSLog("MISSING EXPECTED valueHandler!")
-          end
-          hash[:valueHandler] = nil
-          hash[:valueSubject] = nil
-        end
-      })
-    }).subscribeOn(RMXFirebase.scheduler)
-  end
-
-  # ChildAdded sends [ curr, prev ]
-  def rac_addedSignal
-    self.class.rac_addedSignal(self)
-  end
-  def self.rac_addedSignal(ref)
-    RACSignal.createSignal(-> (subscriber) {
-      handler = ref.observeEventType(FEventTypeChildAdded, andPreviousSiblingNameWithBlock:->(curr, prev) {
-        subscriber.sendNext([ curr, prev ])
-      }, withCancelBlock:->(err) {
-        subscriber.sendError(err)
-      })
-      # NSLog("rac_addedSignal #{description} handler: #{handler}")
-
-      RACDisposable.disposableWithBlock(-> {
-        # NSLog("rac_addedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
-        ref.removeObserverWithHandle(handler)
-      })
-    }).subscribeOn(RMXFirebase.scheduler)
-  end
-
-  # ChildMoved sends [ curr, prev ]
-  def rac_movedSignal
-    self.class.rac_movedSignal(self)
-  end
-  def self.rac_movedSignal(ref)
-    RACSignal.createSignal(-> (subscriber) {
-      handler = ref.observeEventType(FEventTypeChildMoved, andPreviousSiblingNameWithBlock:->(curr, prev) {
-        subscriber.sendNext([ curr, prev ])
-      }, withCancelBlock:->(err) {
-        subscriber.sendError(err)
-      })
-      # NSLog("rac_movedSignal #{description} handler: #{handler}")
-
-      RACDisposable.disposableWithBlock(-> {
-        # NSLog("rac_movedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
-        ref.removeObserverWithHandle(handler)
-      })
-    }).subscribeOn(RMXFirebase.scheduler)
-  end
-
-  # ChildChanged sends [ curr, prev ]
-  def rac_changedSignal
-    self.class.rac_changedSignal(self)
-  end
-  def self.rac_changedSignal(ref)
-    RACSignal.createSignal(-> (subscriber) {
-      handler = ref.observeEventType(FEventTypeChildChanged, andPreviousSiblingNameWithBlock:->(curr, prev) {
-        subscriber.sendNext([ curr, prev ])
-      }, withCancelBlock:->(err) {
-        subscriber.sendError(err)
-      })
-      # NSLog("rac_changedSignal #{description} handler: #{handler}")
-
-      RACDisposable.disposableWithBlock(-> {
-        # NSLog("rac_changedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
-        ref.removeObserverWithHandle(handler)
-      })
-    }).subscribeOn(RMXFirebase.scheduler)
-  end
-
-  # ChildRemoved sends curr
-  def rac_removedSignal
-    self.class.rac_removedSignal(self)
-  end
-  def self.rac_removedSignal(ref)
-    RACSignal.createSignal(-> (subscriber) {
-      handler = ref.observeEventType(FEventTypeChildRemoved, withBlock:->(curr) {
+      handler = observeEventType(FEventTypeValue, withBlock:->(curr) {
         subscriber.sendNext(curr)
       }, withCancelBlock:->(err) {
         subscriber.sendError(err)
       })
-      # NSLog("rac_removedSignal #{description} handler: #{handler}")
-
       RACDisposable.disposableWithBlock(-> {
-        # NSLog("rac_removedSignal disposableWithBlock removeObserverWithHandle(#{handler})")
-        ref.removeObserverWithHandle(handler)
+        removeObserverWithHandle(handler)
       })
-    }).subscribeOn(RMXFirebase.scheduler)
+    })
+    .subscribeOn(RMXFirebase.scheduler)
   end
 
-  # once signals
-
-  def rac_valueOnceSignal
-    rac_valueSignal.take(1)
+  # ChildAdded sends [ curr, prev ]
+  def rac_addedSignal
+    RACSignal.createSignal(->(subscriber) {
+      handler = observeEventType(FEventTypeChildAdded, andPreviousSiblingNameWithBlock:->(curr, prev) {
+        subscriber.sendNext([ curr, prev ])
+      }, withCancelBlock:->(err) {
+        subscriber.sendError(err)
+      })
+      RACDisposable.disposableWithBlock(-> {
+        removeObserverWithHandle(handler)
+      })
+    })
+    .subscribeOn(RMXFirebase.scheduler)
   end
 
-  def rac_addedOnceSignal
-    rac_addedSignal.take(1)
+  # ChildMoved sends [ curr, prev ]
+  def rac_movedSignal
+    RACSignal.createSignal(->(subscriber) {
+      handler = observeEventType(FEventTypeChildMoved, andPreviousSiblingNameWithBlock:->(curr, prev) {
+        subscriber.sendNext([ curr, prev ])
+      }, withCancelBlock:->(err) {
+        subscriber.sendError(err)
+      })
+      RACDisposable.disposableWithBlock(-> {
+        removeObserverWithHandle(handler)
+      })
+    })
+    .subscribeOn(RMXFirebase.scheduler)
   end
 
-  def rac_movedOnceSignal
-    rac_movedSignal.take(1)
+  # ChildChanged sends [ curr, prev ]
+  def rac_changedSignal
+    RACSignal.createSignal(->(subscriber) {
+      handler = observeEventType(FEventTypeChildChanged, andPreviousSiblingNameWithBlock:->(curr, prev) {
+        subscriber.sendNext([ curr, prev ])
+      }, withCancelBlock:->(err) {
+        subscriber.sendError(err)
+      })
+      RACDisposable.disposableWithBlock(-> {
+        removeObserverWithHandle(handler)
+      })
+    })
+    .subscribeOn(RMXFirebase.scheduler)
   end
 
-  def rac_changedOnceSignal
-    rac_changedSignal.take(1)
+  # ChildRemoved sends curr
+  def rac_removedSignal
+    RACSignal.createSignal(->(subscriber) {
+      handler = observeEventType(FEventTypeChildRemoved, withBlock:->(curr) {
+        subscriber.sendNext(curr)
+      }, withCancelBlock:->(err) {
+        subscriber.sendError(err)
+      })
+      RACDisposable.disposableWithBlock(-> {
+        removeObserverWithHandle(handler)
+      })
+    })
+    .subscribeOn(RMXFirebase.scheduler)
   end
-  def rac_removedOnceSignal
-    rac_removedSignal.take(1)
+
+  # will sendNext with authData or error
+  def rac_authWithCredentialSignal(firebase_auth)
+    RACSignal.createSignal(->(subscriber) {
+      authWithCredential(firebase_auth, withCompletionBlock:->(error, authData) {
+        if error
+          subscriber.sendError(error)
+        else
+          subscriber.sendNext(authData)
+        end
+      }, withCancelBlock:->(error) {
+        subscriber.sendError(error)
+      })
+      nil
+    })
+    .subscribeOn(RMXFirebase.scheduler)
   end
 
 end

@@ -1,7 +1,6 @@
 # to get models to show up in Instruments, for some reason need to < UIResponder 
 class RMXFirebaseModel
 
-  include RMXCommonMethods
   include RMXFirebaseSignalHelpers
   
   def self.get(opts=nil)
