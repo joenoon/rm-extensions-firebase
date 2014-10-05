@@ -29,7 +29,7 @@ class RMXFirebaseView < RMXView
       .takeUntil(rac_willDeallocSignal)
       .subscribeNext(->(m) {
         m.ready? ? changed : pending
-      }.rmx_weak!)
+      }.rmx_unsafe!)
     end
     @model
   end

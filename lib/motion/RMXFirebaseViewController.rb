@@ -40,7 +40,7 @@ class RMXFirebaseViewController < RMXViewController
         else
           @pending_changed = true
         end
-      }.rmx_weak!)
+      }.rmx_unsafe!)
     end
     @model
   end

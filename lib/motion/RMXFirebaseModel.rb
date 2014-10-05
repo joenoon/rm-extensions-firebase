@@ -49,7 +49,7 @@ class RMXFirebaseModel
         @readySignal.sendNext(true)
         @changedSignal.sendNext(true)
       end
-    }.rmx_weak!)
+    }.rmx_unsafe!)
     check
   end
 

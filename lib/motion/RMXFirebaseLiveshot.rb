@@ -27,7 +27,7 @@ class RMXFirebaseLiveshot
     .takeUntil(rac_willDeallocSignal)
     .subscribeNext(->(snap) {
       self.snap = snap
-    }.rmx_weak!)
+    }.rmx_unsafe!)
     self.ref = ref
   end
 

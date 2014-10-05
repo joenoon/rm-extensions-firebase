@@ -55,11 +55,11 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   # added (model)
   def weakAddedModelSignal
-    weakAddedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_weak!)
+    weakAddedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
   end
 
   def weakAddedModelMainSignal
-    weakAddedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_weak!)
+    weakAddedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
   end
 
   # removed
@@ -82,11 +82,11 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   # moved (model)
   def weakMovedModelSignal
-    weakMovedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_weak!)
+    weakMovedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
   end
 
   def weakMovedModelMainSignal
-    weakMovedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_weak!)
+    weakMovedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
   end
 
   def initialize(ref)
