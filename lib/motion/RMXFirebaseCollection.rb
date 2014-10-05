@@ -36,6 +36,14 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
     modelsSignalForBaseSignal(weakAlwaysSignal).deliverOn(RACScheduler.mainThreadScheduler)
   end
 
+  def strongAlwaysModelsSignal
+    modelsSignalForBaseSignal(strongAlwaysSignal)
+  end
+
+  def strongAlwaysModelsMainSignal
+    modelsSignalForBaseSignal(strongAlwaysSignal).deliverOn(RACScheduler.mainThreadScheduler)
+  end
+
   def strongOnceModelsSignal
     modelsSignalForBaseSignal(strongOnceSignal)
   end
