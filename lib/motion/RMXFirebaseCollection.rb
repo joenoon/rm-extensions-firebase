@@ -23,7 +23,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       m.purge_transforms_not_in_names(names)
       signals = items.map(&:strongOnceSignal)
       RACSignal.concat(signals).collect
-    }.rmx_unsafe!)
+    }.weak!)
     .switchToLatest
   end
 
@@ -61,7 +61,7 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
       else
         RACSignal.never
       end
-    }.rmx_unsafe!)
+    }.weak!)
     .switchToLatest
   end
 
@@ -71,11 +71,11 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   # added (model)
   def weakAddedModelSignal
-    weakAddedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
+    weakAddedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
   end
 
   def weakAddedModelMainSignal
-    weakAddedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
+    weakAddedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
   end
 
   # removed
@@ -98,11 +98,11 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   # moved (model)
   def weakMovedModelSignal
-    weakMovedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
+    weakMovedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
   end
 
   def weakMovedModelMainSignal
-    weakMovedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.rmx_unsafe!)
+    weakMovedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
   end
 
   def initialize(ref)

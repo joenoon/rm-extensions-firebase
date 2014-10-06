@@ -2,7 +2,7 @@ module RMXFirebaseSignalHelpers
 
   # always
   def weakAlwaysSignal
-    readySignal.takeUntil(rac_willDeallocSignal).map(->(x) { self }.rmx_unsafe!)
+    readySignal.takeUntil(rac_willDeallocSignal).map(->(x) { self }.weak!)
   end
 
   def weakAlwaysMainSignal
@@ -36,7 +36,7 @@ module RMXFirebaseSignalHelpers
 
   # changed
   def weakChangedSignal
-    changedSignal.takeUntil(rac_willDeallocSignal).map(->(x) { self }.rmx_unsafe!)
+    changedSignal.takeUntil(rac_willDeallocSignal).map(->(x) { self }.weak!)
   end
 
   def weakChangedMainSignal

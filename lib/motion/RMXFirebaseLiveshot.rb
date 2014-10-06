@@ -28,7 +28,7 @@ class RMXFirebaseLiveshot
     @changedSignal.subscribe(@readySignal)
 
     RMX(self).rac("snap").signal = RMX(self).racObserve("ref")
-    .map(->(_r) { _r.rac_valueSignal.catchTo(RACSignal.never) }.rmx_unsafe!)
+    .map(->(_r) { _r.rac_valueSignal.catchTo(RACSignal.never) }.weak!)
     .switchToLatest
 
 

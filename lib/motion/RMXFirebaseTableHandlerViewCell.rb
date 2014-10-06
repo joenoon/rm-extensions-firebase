@@ -39,7 +39,7 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
             if th = tableHandler
               th.invalidateHeightForData(m, reuseIdentifier:sizerCellReuseIdentifier)
             end
-          }.rmx_unsafe!)
+          }.weak!)
         end
         @model = nil
       else
@@ -48,7 +48,7 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
         .takeUntil(rac_willDeallocSignal)
         .subscribeNext(->(m) {
           m.ready? ? changed : pending
-        }.rmx_unsafe!)
+        }.weak!)
       end
     end
     @model

@@ -33,7 +33,7 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
       .takeUntil(rac_willDeallocSignal)
       .subscribeNext(->(m) {
         m.ready? ? changed : pending
-      }.rmx_unsafe!)
+      }.weak!)
     end
     @model
   end

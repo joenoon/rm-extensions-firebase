@@ -42,12 +42,12 @@ class RMXFirebaseModel
     @checkSignal = RACSignal.never
     
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
-    @changedSignal = RMX(self).racObserve("loaded").skip(1).filter(->(s) { s }.rmx_unsafe!)
+    @changedSignal = RMX(self).racObserve("loaded").skip(1).filter(->(s) { s }.weak!)
     @changedSignal.subscribe(@readySignal)
 
     RMX(self).rac("loaded").signal = RMX(self).racObserve("checkSignal")
     .switchToLatest
-    .map(->(s) { check == true }.rmx_unsafe!)
+    .map(->(s) { check == true }.weak!)
 
     setup
     check
