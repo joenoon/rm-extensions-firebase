@@ -24,7 +24,7 @@ class RMXFirebaseLiveshot
     @ref = _ref
 
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
-    @changedSignal = RMX(self).racObserve("snap").skip(1).mapReplace(true)
+    @changedSignal = RMX(self).racObserve("snap").ignore(nil).mapReplace(true)
     @changedSignal.subscribe(@readySignal)
 
     RMX(self).rac("snap").signal = RMX(self).racObserve("ref")

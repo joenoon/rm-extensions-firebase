@@ -54,7 +54,15 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   # added
   def weakAddedSignal
-    readySignal.takeUntil(rac_willDeallocSignal).take(1).then(-> { ref.rac_addedSignal })
+    weakAlwaysSignal
+    .map(->(x) {
+      if r = x.ref and s = x.snap
+        r.rac_addedSignal.skip(s.childrenCount)
+      else
+        RACSignal.never
+      end
+    }.rmx_unsafe!)
+    .switchToLatest
   end
 
   def weakAddedMainSignal
