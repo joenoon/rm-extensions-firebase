@@ -15,6 +15,11 @@ class RMXFirebaseModel
 
   property :root
 
+  LOADED_KEY = "loaded"
+  CHECK_SIGNAL_KEY = "checkSignal"
+
+  attr_accessor :loaded, :checkSignal
+
   attr_reader :opts
 
   # readySignal will next true when:
@@ -30,34 +35,26 @@ class RMXFirebaseModel
 
   def initialize(opts=nil)
     RMX.log_dealloc(self)
-    @lock = NSLock.new
     @dep_signals = NSMutableSet.new
     @deps = {}
     @opts = opts
-    @checkSubject = RACSubject.subject
+
+    @checkSignal = RACSignal.never
+    
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
-    @changedSignal = RACSubject.subject
+    @changedSignal = RMX(self).racObserve("loaded").skip(1).filter(->(s) { s }.rmx_unsafe!)
+    @changedSignal.subscribe(@readySignal)
+
+    RMX(self).rac("loaded").signal = RMX(self).racObserve("checkSignal")
+    .switchToLatest
+    .map(->(s) { check == true }.rmx_unsafe!)
+
     setup
-    @checkSubject.switchToLatest
-    .takeUntil(rac_willDeallocSignal)
-    .subscribeNext(->(s) {
-      if check
-        # p "really ready"
-        @lock.lock
-        @loaded = true
-        @lock.unlock
-        @readySignal.sendNext(true)
-        @changedSignal.sendNext(true)
-      end
-    }.rmx_unsafe!)
     check
   end
 
   def loaded?
-    @lock.lock
-    res = !!@loaded
-    @lock.unlock
-    res
+    !!@loaded
   end
 
   def ready?
@@ -98,7 +95,7 @@ class RMXFirebaseModel
     end
     if changed
       # p "check send signals", @dep_signals.count
-      @checkSubject.sendNext(RACSignal.combineLatest(@dep_signals.allObjects))
+      self.checkSignal = RACSignal.combineLatest(@dep_signals.allObjects)
     end
     changed == false
   end
@@ -124,7 +121,6 @@ class RMXFirebaseModel
   end
 
   def fullValue
-    @lock.lock
     res = @deps.keys.inject({}) do |ret, k|
       if dep = @deps[k]
         if v = dep[:value]
@@ -133,7 +129,6 @@ class RMXFirebaseModel
       end
       ret
     end
-    @lock.unlock
     res
   end
 
@@ -153,8 +148,15 @@ class RMXFirebaseModel
   alias_method :eql?, :isEqual
 
   def valueForKey(key)
-    if d = @deps[key.to_sym]
-      d[:value]
+    case key
+    when LOADED_KEY
+      loaded
+    when CHECK_SIGNAL_KEY
+      checkSignal
+    else
+      if d = @deps[key.to_sym]
+        d[:value]
+      end
     end
   end
 

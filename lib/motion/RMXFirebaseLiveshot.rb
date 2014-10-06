@@ -2,6 +2,11 @@ class RMXFirebaseLiveshot
 
   include RMXFirebaseSignalHelpers
 
+  SNAP_KEY = "snap"
+  REF_KEY = "ref"
+
+  attr_accessor :snap, :ref
+
   # readySignal will next true when:
   #   it is ready
   #   it becomes ready
@@ -13,42 +18,26 @@ class RMXFirebaseLiveshot
   #   it changes
   attr_reader :changedSignal
 
-  def initialize(ref)
+  def initialize(_ref)
     RMX.log_dealloc(self)
 
-    @lock = NSLock.new
-    # @lock.name = "lock:#{description}"
+    @ref = _ref
 
     @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
-    @changedSignal = RACSubject.subject
-    @refSignal = RACSubject.subject
+    @changedSignal = RMX(self).racObserve("snap").skip(1).mapReplace(true)
+    @changedSignal.subscribe(@readySignal)
 
-    @refSignal.switchToLatest
-    .takeUntil(rac_willDeallocSignal)
-    .subscribeNext(->(snap) {
-      self.snap = snap
-    }.rmx_unsafe!)
-    self.ref = ref
-  end
+    RMX(self).rac("snap").signal = RMX(self).racObserve("ref")
+    .map(->(_r) { _r.rac_valueSignal.catchTo(RACSignal.never) }.rmx_unsafe!)
+    .switchToLatest
 
-  def ref=(ref)
-    @lock.lock
-    @ref = ref
-    @ref_description = ref.ref_description
-    @lock.unlock
-    @refSignal.sendNext(ref.rac_valueSignal)
-  end
 
-  # ref this Liveshot is observing
-  def ref
-    @lock.lock
-    res = @ref
-    @lock.unlock
-    res
   end
 
   def ref_description
-    @ref_description
+    if r = @ref
+      r.ref_description
+    end
   end
 
   def loaded?
@@ -57,22 +46,6 @@ class RMXFirebaseLiveshot
 
   def ready?
     loaded? && hasValue?
-  end
-
-  def snap=(snap)
-    @lock.lock
-    @snap = snap
-    @lock.unlock
-    @readySignal.sendNext(true)
-    @changedSignal.sendNext(true)
-    snap
-  end
-
-  def snap
-    @lock.lock
-    res = @snap
-    @lock.unlock
-    res
   end
 
   def name
@@ -102,8 +75,15 @@ class RMXFirebaseLiveshot
   end
 
   def valueForKey(key)
-    if s = snap
-      s.valueForKey(key)
+    case key
+    when SNAP_KEY
+      snap
+    when REF_KEY
+      ref
+    else
+      if s = snap
+        s.valueForKey(key)
+      end
     end
   end
 
