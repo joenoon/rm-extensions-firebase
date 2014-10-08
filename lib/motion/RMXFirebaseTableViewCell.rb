@@ -32,7 +32,7 @@ class RMXFirebaseTableViewCell < RMXTableViewCell
       @model_unbinder = @model.weakAlwaysMainSignal
       .takeUntil(rac_willDeallocSignal)
       .subscribeNext(->(m) {
-        m.ready? ? changed : pending
+        m.hasValue? ? changed : pending
       }.weak!)
     end
     @model
