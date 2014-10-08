@@ -1,23 +1,100 @@
-class RMXFirebaseCollection < RMXFirebaseLiveshot
+class RMXFirebaseCollection
+
+  def self.get(ref)
+    new(ref)
+  end
+
+  attr_accessor :snap, :ref, :loaded
 
   # order will affect future passes through modelsSignalForBaseSignal transformation,
   # so set it before using modelsSignalForBaseSignal-based signals
   attr_accessor :order
+
+  # readySignal will next true when:
+  #   it is ready
+  #   it becomes ready
+  #   it changes
+  #
+  attr_reader :readySignal
+
+  # changedSignal will next true when:
+  #   it changes
+  def changedSignal
+    @readySignal.skip(1)
+  end
+
+  def initialize(_ref)
+    RMX.log_dealloc(self)
+    @loaded = false
+    @models = {}
+
+    @readySignal = RMX(self).racObserve("loaded").ignore(false)
+
+    RMX(self).rac("snap").signal = RMX(self).racObserve("ref").ignore(nil)
+    .map(->(_r) { _r.rac_valueSignal.catchTo(RACSignal.never) }.weak!)
+    .switchToLatest
+
+    RMX(self).rac("loaded").signal = RMX(self).racObserve("snap").ignore(nil)
+    .mapReplace(true)#.setNameWithFormat("READY(#{rmx_object_desc})").logAll
+
+    self.ref = _ref
+  end
+
+  def ref_description
+    if r = @ref
+      r.ref_description
+    end
+  end
 
   # public, override required
   def transform(snap)
     raise "#{className}#transform(snap): override to return a RMXFirebaseModel based on the snap"
   end
 
-  def self.get(ref)
-    new(ref)
+  def store_transform(snap)
+    @models[snap.name] ||= transform(snap)
   end
+
+  def purge_transforms_not_in_names(names)
+    existing_names = @models.keys
+    old_names = existing_names - names
+    old_names.each do |old_name|
+      # p "removing old name", old_name
+      @models.delete(old_name)
+    end
+  end
+
+  # adjust the current Firebase ref's limit by an increment number
+  def limitIncrBy(num)
+    if r = ref
+      if l = r.queryParams && r.queryParams.queryObject["l"]
+        new_limit = l.to_i + num
+        new_limit = 0 if new_limit < 0
+        new_ref = r.limited(new_limit)
+        self.ref = new_ref
+      else
+        NSLog("#{className}#limitIncrBy WARNING: tried to increament a non-existent limit for #{r.ref_description}")
+      end
+    end
+  end
+
+  # adjust the current Firebase ref's limit to an exact number
+  def limitTo(num)
+    if r = ref
+      new_ref = r.limited(num)
+      self.ref = new_ref
+    end
+  end
+
+  # signals
+
+  include RMXFirebaseSignalHelpers
 
   def modelsSignalForBaseSignal(base)
     base
     .deliverOn(RMXFirebase.scheduler)
     .map(->(m) {
-      snaps = m.order == :desc ? m.childrenArray.reverse : m.childrenArray
+      snaps = m.order == :desc ? m.snap.children.allObjects.reverse : m.snap.children.allObjects
       names = snaps.map(&:name)
       items = snaps.map { |s| m.store_transform(s) }
       m.purge_transforms_not_in_names(names)
@@ -75,7 +152,14 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
   end
 
   def weakAddedModelMainSignal
-    weakAddedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
+    weakAddedMainSignal
+    .map(->(pair) {
+      model = store_transform(pair[0])
+      prev = pair[1]
+      arr = [ model, prev ]
+      model.strongOnceSignal.mapReplace(arr)
+    }.weak!)
+    .switchToLatest
   end
 
   # removed
@@ -103,46 +187,6 @@ class RMXFirebaseCollection < RMXFirebaseLiveshot
 
   def weakMovedModelMainSignal
     weakMovedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
-  end
-
-  def initialize(ref)
-    super
-    @models = {}
-  end
-
-  def store_transform(snap)
-    @models[snap.name] ||= transform(snap)
-  end
-
-  def purge_transforms_not_in_names(names)
-    existing_names = @models.keys
-    old_names = existing_names - names
-    old_names.each do |old_name|
-      # p "removing old name", old_name
-      @models.delete(old_name)
-    end
-  end
-
-  # adjust the current Firebase ref's limit by an increment number
-  def limitIncrBy(num)
-    if r = ref
-      if l = r.queryParams && r.queryParams.queryObject["l"]
-        new_limit = l.to_i + num
-        new_limit = 0 if new_limit < 0
-        new_ref = r.limited(new_limit)
-        self.ref = new_ref
-      else
-        NSLog("#{className}#limitIncrBy WARNING: tried to increament a non-existent limit for #{r.ref_description}")
-      end
-    end
-  end
-
-  # adjust the current Firebase ref's limit to an exact number
-  def limitTo(num)
-    if r = ref
-      new_ref = r.limited(num)
-      self.ref = new_ref
-    end
   end
 
 end
