@@ -11,7 +11,6 @@ Motion::Project::App.setup do |app|
     FDataSnapshot+RMXFirebase
     RMXFirebase
     RMXFirebaseSignalHelpers
-    RMXFirebaseLiveshot
     RMXFirebaseModel
     RMXFirebaseCollection
     RMXFirebaseHandleModel

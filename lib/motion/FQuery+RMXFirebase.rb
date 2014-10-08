@@ -32,10 +32,6 @@ class FQuery
     "https://#{repo.repoInfo.host}#{path.toString}##{queryParams.queryIdentifier}"
   end
 
-  def liveshot
-    RMXFirebaseLiveshot.new(self)
-  end
-
   # Value sends curr
   def rac_valueSignal
     RACSignal.createSignal(->(subscriber) {

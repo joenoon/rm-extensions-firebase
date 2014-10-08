@@ -1,6 +1,8 @@
 # to get models to show up in Instruments, for some reason need to < UIResponder 
 class RMXFirebaseModel
 
+  include RMXCommonMethods
+
   include RMXFirebaseSignalHelpers
   
   def self.get(opts=nil)
@@ -8,17 +10,16 @@ class RMXFirebaseModel
   end
 
   def self.property(name)
-    define_method(name) do
-      valueForKeyPath(name)
-    end
+    attr_accessor name
+    attr_accessor "#{name}_satisfied"
   end
 
   property :root
 
-  LOADED_KEY = "loaded"
-  CHECK_SIGNAL_KEY = "checkSignal"
+  NIL_SIG = RACSignal.return(nil)
+  TRUE_SIG = RACSignal.return(true)
 
-  attr_accessor :loaded, :checkSignal
+  attr_accessor :loaded
 
   attr_reader :opts
 
@@ -31,81 +32,68 @@ class RMXFirebaseModel
 
   # changedSignal will next true when:
   #   it changes
-  attr_reader :changedSignal
+  def changedSignal
+    @readySignal.skip(1)
+  end
 
   def initialize(opts=nil)
     RMX.log_dealloc(self)
-    @dep_signals = NSMutableSet.new
-    @deps = {}
+    @deps = []
+    @dep_sigs = []
     @opts = opts
+    @loaded = false
 
-    @checkSignal = RACSignal.never
-    
-    @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
-    @changedSignal = RMX(self).racObserve("loaded").skip(1).filter(->(s) { s }.weak!)
-    @changedSignal.subscribe(@readySignal)
-
-    RMX(self).rac("loaded").signal = RMX(self).racObserve("checkSignal")
-    .switchToLatest
-    .map(->(s) { check == true }.weak!)
+    @readySignal = RMX(self).racObserve("loaded").ignore(false)
 
     setup
-    check
-  end
 
-  def loaded?
-    !!@loaded
-  end
+    RMX(self).rac("loaded").signal = RACSignal.combineLatest(@dep_sigs)
+    .mapReplace(true)#.setNameWithFormat("(#{rmx_object_desc}) READY").logAll
 
-  def ready?
-    loaded? && hasValue?
-  end
-
-  def check
-    # p "check", RACScheduler.currentScheduler, RMX.mainThread?
-    changed = false
-    @deps.each_pair do |name, hash|
-      opts = hash[:opts]
-      # p "check", name, opts
-      if model_klass = opts[:model] and keypath = opts[:keypath]
-        if model_opts = valueForKeyPath(keypath)
-          existing = hash[:value]
-          if !existing || existing.opts != model_opts
-            if existing
-              sig = existing.readySignal
-              if @dep_signals.containsObject(sig)
-                @dep_signals.removeObject(sig)
-                changed = true
-                # p "check delete signal", name, opts, sig
-              end
-            end
-            hash[:value] = model_klass.get(model_opts)
-          end
-        end
-      end
-      if v = hash[:value]
-        sig = v.readySignal
-        unless @dep_signals.containsObject(sig)
-          @dep_signals.addObject(sig)
-          changed = true
-          # p "check add signal", name, opts, sig
-        end
-      end
-      # p "check done", name, opts
-    end
-    if changed
-      # p "check send signals", @dep_signals.count
-      self.checkSignal = RACSignal.combineLatest(@dep_signals.allObjects)
-    end
-    changed == false
   end
 
   def depend(name, opts)
-    dep = @deps[name] = {}
-    if v = opts.delete(:value)
-      dep[:value] = v
+    satisfied_key = "#{name}_satisfied"
+    dep_sig = if signal = opts[:signal]
+      signal
+    else
+      model = opts[:model]
+      parts = opts[:keypath].split(".")
+      dep_satisfied_key = "*self*"
+      dep_on_sig = if parts.first == "self"
+        parts.shift
+        TRUE_SIG
+      else
+        dep_satisfied_key = "#{parts.first}_satisfied"
+        RMX(self).racObserve(dep_satisfied_key).ignore(nil)
+      end
+      keypath = parts.join(".")
+      dep_on_sig#.setNameWithFormat("(#{rmx_object_desc}) #{name} check because of #{dep_satisfied_key}").logAll
+      .takeUntil(rac_willDeallocSignal)
+      .map(->(x) {
+        valueForKeyPath(keypath)
+      }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) #{name} opts for keypath #{keypath}").logAll
+      .distinctUntilChanged
+      .map(->(opts) {
+        if opts
+          # p "depend", name, "send strongSingal", "model", model, "opts", opts
+          model.get(opts).strongAlwaysSignal
+        else
+          # p "depend", name, "send nilSignal"
+          NIL_SIG
+        end
+      }.weak!)
+      .switchToLatest#.setNameWithFormat("(#{rmx_object_desc}) #{name} result for keypath #{keypath}").logAll
     end
-    dep[:opts] = opts
+    .doNext(->(x) {
+      # p "setValue", "forKey", name, "val", x
+      setValue(x, forKey:name)
+      # p "setValue date", "forKey", satisfied_key
+      setValue(NSDate.date, forKey:satisfied_key)
+    }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) #{name} complete for keypath #{keypath}").logAll
+    @deps << name
+    @dep_sigs << dep_sig
+    nil
   end
 
   def attr(keypath)
@@ -113,7 +101,7 @@ class RMXFirebaseModel
   end
 
   def hasValue?
-    root.hasValue?
+    root && root.hasValue?
   end
 
   def value
@@ -121,12 +109,18 @@ class RMXFirebaseModel
   end
 
   def fullValue
-    res = @deps.keys.inject({}) do |ret, k|
-      if dep = @deps[k]
-        if v = dep[:value]
-          ret[k] = v.value
-        end
+    res = @deps.inject({}) do |ret, k|
+      ret[k] = if v = valueForKey(k)
+        v.value
       end
+      ret
+    end
+    res
+  end
+
+  def propertyValues
+    res = @deps.inject({}) do |ret, k|
+      ret[k] = valueForKey(k)
       ret
     end
     res
@@ -146,22 +140,5 @@ class RMXFirebaseModel
 
   alias_method :==, :isEqual
   alias_method :eql?, :isEqual
-
-  def valueForKey(key)
-    case key
-    when LOADED_KEY
-      loaded
-    when CHECK_SIGNAL_KEY
-      checkSignal
-    else
-      if d = @deps[key.to_sym]
-        d[:value]
-      end
-    end
-  end
-
-  def valueForUndefinedKey(key)
-    nil
-  end
 
 end
