@@ -18,8 +18,4 @@ class FDataSnapshot
     nil
   end
 
-  def childrenArray
-    children.each.map { |x| x }
-  end
-
 end

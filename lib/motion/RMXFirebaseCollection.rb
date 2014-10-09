@@ -92,7 +92,6 @@ class RMXFirebaseCollection
 
   def modelsSignalForBaseSignal(base)
     base
-    .deliverOn(RMXFirebase.scheduler)
     .map(->(m) {
       snaps = m.order == :desc ? m.snap.children.allObjects.reverse : m.snap.children.allObjects
       names = snaps.map(&:name)
