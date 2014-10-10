@@ -30,11 +30,11 @@ class RMXFirebaseCollection
 
     @readySignal = RMX(self).racObserve("loaded").ignore(false)
 
-    RMX(self).rac("snap").signal = RMX(self).racObserve("ref").ignore(nil)
+    RMX(self).rac["snap"] = RMX(self).racObserve("ref").ignore(nil)
     .map(->(_r) { _r.rac_valueSignal.catchTo(RACSignal.never) }.weak!)
     .switchToLatest
 
-    RMX(self).rac("loaded").signal = RMX(self).racObserve("snap").ignore(nil)
+    RMX(self).rac["loaded"] = RMX(self).racObserve("snap").ignore(nil)
     .mapReplace(true)#.setNameWithFormat("READY(#{rmx_object_desc})").logAll
 
     self.ref = _ref

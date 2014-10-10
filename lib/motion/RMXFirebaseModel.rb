@@ -47,7 +47,7 @@ class RMXFirebaseModel
 
     setup
 
-    RMX(self).rac("loaded").signal = RACSignal.combineLatest(@dep_sigs)
+    RMX(self).rac["loaded"] = RACSignal.combineLatest(@dep_sigs)
     .mapReplace(true)#.setNameWithFormat("(#{rmx_object_desc}) READY").logAll
 
   end
