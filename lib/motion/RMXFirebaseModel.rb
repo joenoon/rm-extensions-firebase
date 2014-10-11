@@ -48,7 +48,10 @@ class RMXFirebaseModel
     setup
 
     RMX(self).rac["loaded"] = RACSignal.combineLatest(@dep_sigs)
-    .mapReplace(true)#.setNameWithFormat("(#{rmx_object_desc}) READY").logAll
+    .takeUntil(rac_willDeallocSignal)
+    .map(->(x) {
+      root && !root.value.nil?
+    }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) READY").logAll
 
   end
 
@@ -86,10 +89,12 @@ class RMXFirebaseModel
       .switchToLatest#.setNameWithFormat("(#{rmx_object_desc}) #{name} result for keypath #{keypath}").logAll
     end
     .doNext(->(x) {
-      # p "setValue", "forKey", name, "val", x
-      setValue(x, forKey:name)
-      # p "setValue date", "forKey", satisfied_key
-      setValue(NSDate.date, forKey:satisfied_key)
+      unless x.nil?
+        # p "setValue", "forKey", name, "val", x
+        setValue(x, forKey:name)
+        # p "setValue date", "forKey", satisfied_key
+        setValue(NSDate.date, forKey:satisfied_key)
+      end
     }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) #{name} complete for keypath #{keypath}").logAll
     @deps << name
     @dep_sigs << dep_sig
@@ -100,8 +105,8 @@ class RMXFirebaseModel
     root.attr(keypath)
   end
 
-  def hasValue?
-    root && root.hasValue?
+  def ready?
+    loaded && root && !root.value.nil?
   end
 
   def value

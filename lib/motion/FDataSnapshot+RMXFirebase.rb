@@ -1,9 +1,5 @@
 class FDataSnapshot
 
-  def hasValue?
-    !value.nil?
-  end
-
   def attr(keypath)
     valueForKeyPath(keypath)
   end

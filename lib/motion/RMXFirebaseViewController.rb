@@ -36,7 +36,7 @@ class RMXFirebaseViewController < RMXViewController
       .takeUntil(rac_willDeallocSignal)
       .subscribeNext(->(m) {
         if isViewLoaded
-          m.hasValue? ? changed : pending
+          m.ready? ? changed : pending
         else
           @pending_changed = true
         end
