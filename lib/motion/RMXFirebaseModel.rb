@@ -49,9 +49,7 @@ class RMXFirebaseModel
 
     RMX(self).rac["loaded"] = RACSignal.combineLatest(@dep_sigs)
     .takeUntil(rac_willDeallocSignal)
-    .map(->(x) {
-      root && !root.value.nil?
-    }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) READY").logAll
+    .mapReplace(true)#.setNameWithFormat("(#{rmx_object_desc}) READY").logAll
 
   end
 
@@ -90,10 +88,13 @@ class RMXFirebaseModel
     end
     .doNext(->(x) {
       unless x.nil?
+        # NSLog("(#{rmx_object_desc}.#{name}) satisfied")
         # p "setValue", "forKey", name, "val", x
         setValue(x, forKey:name)
         # p "setValue date", "forKey", satisfied_key
         setValue(NSDate.date, forKey:satisfied_key)
+      # else
+      #   NSLog("(#{rmx_object_desc}.#{name}) skip")
       end
     }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) #{name} complete for keypath #{keypath}").logAll
     @deps << name
