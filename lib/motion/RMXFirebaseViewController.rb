@@ -13,6 +13,9 @@ class RMXFirebaseViewController < RMXViewController
     s
   end
 
+  def reset
+  end
+
   def changed
   end
 

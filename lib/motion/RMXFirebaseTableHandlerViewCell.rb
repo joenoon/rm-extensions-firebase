@@ -8,6 +8,9 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
     reset
   end
 
+  def reset
+  end
+
   def changed
   end
 
