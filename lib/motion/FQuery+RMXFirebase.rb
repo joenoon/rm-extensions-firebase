@@ -8,24 +8,8 @@ class FQuery
     end
   end
 
-  def limited(limit)
-    queryLimitedToNumberOfChildren(limit)
-  end
-
-  def starting_at(priority, child_name=nil)
-    if child_name
-      queryStartingAtPriority(priority, andChildName:child_name)
-    else
-      queryStartingAtPriority(priority)
-    end
-  end
-
-  def ending_at(priority, child_name=nil)
-    if child_name
-      queryEndingAtPriority(priority, andChildName:child_name)
-    else
-      queryEndingAtPriority(priority)
-    end
+  def freshRef
+    Firebase.alloc.initWithUrl("https://#{repo.repoInfo.host}#{path.toString}")
   end
 
   def ref_description

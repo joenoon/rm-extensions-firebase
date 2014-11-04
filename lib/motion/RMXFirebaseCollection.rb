@@ -52,15 +52,15 @@ class RMXFirebaseCollection
   end
 
   def store_transform(snap)
-    @models[snap.name] ||= transform(snap)
+    @models[snap.key] ||= transform(snap)
   end
 
-  def purge_transforms_not_in_names(names)
-    existing_names = @models.keys
-    old_names = existing_names - names
-    old_names.each do |old_name|
-      # p "removing old name", old_name
-      @models.delete(old_name)
+  def purge_transforms_not_in_keys(keys)
+    existing_keys = @models.keys
+    old_keys = existing_keys - keys
+    old_keys.each do |old_key|
+      # p "removing old key", old_key
+      @models.delete(old_key)
     end
   end
 
@@ -68,9 +68,10 @@ class RMXFirebaseCollection
   def limitIncrBy(num)
     if r = ref
       if l = r.queryParams && r.queryParams.queryObject["l"]
+        is_left = r.queryParams.queryObject["vf"] == "l"
         new_limit = l.to_i + num
         new_limit = 0 if new_limit < 0
-        new_ref = r.limited(new_limit)
+        new_ref = is_left ? r.freshRef.queryLimitedToFirst(new_limit) : r.freshRef.queryLimitedToLast(new_limit)
         self.ref = new_ref
       else
         NSLog("#{className}#limitIncrBy WARNING: tried to increament a non-existent limit for #{r.ref_description}")
@@ -81,7 +82,8 @@ class RMXFirebaseCollection
   # adjust the current Firebase ref's limit to an exact number
   def limitTo(num)
     if r = ref
-      new_ref = r.limited(num)
+      is_left = r.queryParams && r.queryParams.queryObject["vf"] == "l"
+      new_ref = is_left ? r.queryLimitedToFirst(num) : r.queryLimitedToLast(num)
       self.ref = new_ref
     end
   end
@@ -94,9 +96,9 @@ class RMXFirebaseCollection
     base
     .map(->(m) {
       snaps = m.order == :desc ? m.snap.children.allObjects.reverse : m.snap.children.allObjects
-      names = snaps.map(&:name)
+      keys = snaps.map(&:key)
       items = snaps.map { |s| m.store_transform(s) }
-      m.purge_transforms_not_in_names(names)
+      m.purge_transforms_not_in_keys(keys)
       signals = items.map(&:strongOnceSignal)
       RACSignal.concat(signals).collect
     }.weak!)
