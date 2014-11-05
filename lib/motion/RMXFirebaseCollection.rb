@@ -83,7 +83,7 @@ class RMXFirebaseCollection
   def limitTo(num)
     if r = ref
       is_left = r.queryParams && r.queryParams.queryObject["vf"] == "l"
-      new_ref = is_left ? r.queryLimitedToFirst(num) : r.queryLimitedToLast(num)
+      new_ref = is_left ? r.freshRef.queryLimitedToFirst(num) : r.freshRef.queryLimitedToLast(num)
       self.ref = new_ref
     end
   end
