@@ -64,6 +64,14 @@ class RMXFirebaseCollection
     end
   end
 
+  def currentLimit
+    if r = ref
+      if l = r.queryParams && r.queryParams.queryObject["l"]
+        l.to_i
+      end
+    end
+  end
+
   # adjust the current Firebase ref's limit by an increment number
   def limitIncrBy(num)
     if r = ref
