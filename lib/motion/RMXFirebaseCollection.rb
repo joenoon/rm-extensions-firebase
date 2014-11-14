@@ -161,14 +161,13 @@ class RMXFirebaseCollection
   end
 
   def weakAddedModelMainSignal
-    weakAddedMainSignal
-    .map(->(pair) {
-      model = store_transform(pair[0])
-      prev = pair[1]
+    weakAddedModelSignal
+    .map(->((model, prev)) {
       arr = [ model, prev ]
       model.strongOnceSignal.mapReplace(arr)
     }.weak!)
     .switchToLatest
+    .deliverOn(RACScheduler.mainThreadScheduler)
   end
 
   # removed
@@ -195,7 +194,7 @@ class RMXFirebaseCollection
   end
 
   def weakMovedModelMainSignal
-    weakMovedMainSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
+    weakMovedModelSignal.deliverOn(RACScheduler.mainThreadScheduler)
   end
 
 end
