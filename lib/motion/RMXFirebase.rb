@@ -5,7 +5,7 @@ module RMXFirebase
   end
 
   def self.batchMainSignal(*models)
-    batch(*models).deliverOn(RACScheduler.mainThreadScheduler)
+    batchSignal(*models).deliverOn(RACScheduler.mainThreadScheduler)
   end
 
 end
