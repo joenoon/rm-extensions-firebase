@@ -33,7 +33,7 @@ class RMXFirebaseTableHandlerViewCell < RMXTableHandlerViewCell
     if @model
       if sizerCellReuseIdentifier
         reset
-        changed
+        @model.ready? ? changed : pending
         @sizerModels ||= {}
         @sizerModels[@model] ||= begin
           @model.weakChangedMainSignal

@@ -7,7 +7,7 @@ class RMXFirebaseViewController < RMXViewController
     if @pending_changed
       @pending_changed = nil
       if @model
-        changed
+        @model.ready? ? changed : pending
       end
     end
     s
