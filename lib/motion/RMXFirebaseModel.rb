@@ -11,13 +11,9 @@ class RMXFirebaseModel
 
   def self.property(name)
     attr_accessor name
-    attr_accessor "#{name}_satisfied"
   end
 
   property :root
-
-  NIL_SIG = RACSignal.return(nil)
-  TRUE_SIG = RACSignal.return(true)
 
   attr_accessor :loaded
 
@@ -38,67 +34,62 @@ class RMXFirebaseModel
 
   def initialize(opts=nil)
     RMX.log_dealloc(self)
-    @deps = []
-    @dep_sigs = []
+    @deps = {}
     @opts = opts
     @loaded = false
 
-    @readySignal = RMX(self).racObserve("loaded").ignore(false)
+    @readySignal = RACReplaySubject.replaySubjectWithCapacity(1)
 
     setup
 
-    RMX(self).rac["loaded"] = RACSignal.combineLatest(@dep_sigs)
-    .takeUntil(rac_willDeallocSignal)
-    .mapReplace(true)#.setNameWithFormat("(#{rmx_object_desc}) READY").logAll
+    names = []
+    sigs = []
+    @deps.each_pair do |name, sig|
+      names << name
+      sigs << sig
+    end
+
+    RACSignal.combineLatest(sigs)
+    .takeUntil(rac_willDeallocSignal)#.doNext(->(x) { NSLog("(#{rmx_object_desc}) READY") }.weak!)
+    .subscribeNext(->(tuple) {
+      names.each_with_index do |name, i|
+        if val = tuple[i]
+          setValue(val, forKey:name)
+        end
+      end
+      setValue(true, forKey:"loaded")
+      @readySignal.sendNext(true)
+      # p "READY"
+    }.weak!)
 
   end
 
   def depend(name, opts)
-    satisfied_key = "#{name}_satisfied"
-    dep_sig = if signal = opts[:signal]
-      signal
-    else
+    the_sig = opts[:signal] || begin
       model = opts[:model]
       parts = opts[:keypath].split(".")
-      dep_satisfied_key = "*self*"
-      dep_on_sig = if parts.first == "self"
-        parts.shift
-        TRUE_SIG
-      else
-        dep_satisfied_key = "#{parts.first}_satisfied"
-        RMX(self).racObserve(dep_satisfied_key).ignore(nil)
-      end
+      dep = parts.shift
       keypath = parts.join(".")
-      dep_on_sig#.setNameWithFormat("(#{rmx_object_desc}) #{name} check because of #{dep_satisfied_key}").logAll
+      @deps[dep]#.setNameWithFormat("(#{rmx_object_desc}) #{name} check because of #{dep}").logAll
       .takeUntil(rac_willDeallocSignal)
       .map(->(x) {
-        valueForKeyPath(keypath)
+        # p "here"
+        x.valueForKeyPath(keypath)
       }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) #{name} opts for keypath #{keypath}").logAll
       .distinctUntilChanged
       .map(->(opts) {
         if opts
           # p "depend", name, "send strongSingal", "model", model, "opts", opts
-          model.get(opts).strongAlwaysSignal
+          model.get(opts).strongAlwaysSignal.takeUntil(rac_willDeallocSignal)
         else
           # p "depend", name, "send nilSignal"
-          NIL_SIG
+          RACSignal.return(nil)
         end
       }.weak!)
       .switchToLatest#.setNameWithFormat("(#{rmx_object_desc}) #{name} result for keypath #{keypath}").logAll
+      .replayLast
     end
-    .doNext(->(x) {
-      unless x.nil?
-        # NSLog("(#{rmx_object_desc}.#{name}) satisfied")
-        # p "setValue", "forKey", name, "val", x
-        setValue(x, forKey:name)
-        # p "setValue date", "forKey", satisfied_key
-        setValue(NSDate.date, forKey:satisfied_key)
-      # else
-      #   NSLog("(#{rmx_object_desc}.#{name}) skip")
-      end
-    }.weak!)#.setNameWithFormat("(#{rmx_object_desc}) #{name} complete for keypath #{keypath}").logAll
-    @deps << name
-    @dep_sigs << dep_sig
+    @deps[name.to_s] = the_sig
     nil
   end
 

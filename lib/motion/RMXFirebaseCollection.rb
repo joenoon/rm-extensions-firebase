@@ -107,8 +107,7 @@ class RMXFirebaseCollection
       keys = snaps.map(&:key)
       items = snaps.map { |s| m.store_transform(s) }
       m.purge_transforms_not_in_keys(keys)
-      signals = items.map(&:strongOnceSignal)
-      RACSignal.concat(signals).collect
+      RMXFirebase.batchSignal(items)#.setNameWithFormat("BATCH").logAll
     }.weak!)
     .switchToLatest
   end
