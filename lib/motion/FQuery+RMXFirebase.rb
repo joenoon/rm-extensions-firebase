@@ -1,5 +1,8 @@
 class FQuery
 
+  $rmx_firebase_slow = RACSubject.subject
+  $rmx_firebase_slow_threshold = 5
+
   def [](*names)
     if names.length == 0
       childByAutoId
@@ -20,12 +23,24 @@ class FQuery
   # nexts FDataSnapshot *snapshot or sends error
   def rac_valueSignal
     RACSignal.createSignal(->(subscriber) {
+      done = RACSubject.subject
+      RACSignal.return(true)
+      .take(1)
+      .delay($rmx_firebase_slow_threshold)
+      .takeUntil(done)
+      .subscribeNext(->(x) {
+        $rmx_firebase_slow.sendNext(x)
+      }.weak!)
       handler = observeEventType(FEventTypeValue, withBlock:->(curr) {
+        done.sendCompleted
+        $rmx_firebase_slow.sendNext(false)
         subscriber.sendNext(curr)
       }.weak!, withCancelBlock:->(err) {
+        done.sendCompleted
         subscriber.sendError(err)
       }.weak!)
       RACDisposable.disposableWithBlock(-> {
+        done.sendCompleted
         removeObserverWithHandle(handler)
       }.weak!)
     })
