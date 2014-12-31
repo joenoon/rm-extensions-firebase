@@ -26,7 +26,6 @@ class RMXFirebaseCollection
   def initialize(_ref)
     RMX.log_dealloc(self)
     @loaded = false
-    @models = {}
 
     @readySignal = RMX(self).racObserve("loaded").ignore(false)
 
@@ -49,19 +48,6 @@ class RMXFirebaseCollection
   # public, override required
   def transform(snap)
     raise "#{className}#transform(snap): override to return a RMXFirebaseModel based on the snap"
-  end
-
-  def store_transform(snap)
-    @models[snap.key] ||= transform(snap)
-  end
-
-  def purge_transforms_not_in_keys(keys)
-    existing_keys = @models.keys
-    old_keys = existing_keys - keys
-    old_keys.each do |old_key|
-      # p "removing old key", old_key
-      @models.delete(old_key)
-    end
   end
 
   def currentLimit
@@ -105,11 +91,11 @@ class RMXFirebaseCollection
     .map(->(m) {
       snaps = m.order == :desc ? m.snap.children.allObjects.reverse : m.snap.children.allObjects
       keys = snaps.map(&:key)
-      items = snaps.map { |s| m.store_transform(s) }
-      m.purge_transforms_not_in_keys(keys)
+      items = snaps.map { |s| m.transform(s) }
       RMXFirebase.batchSignal(items)#.setNameWithFormat("BATCH").logAll
     }.weak!)
     .switchToLatest
+    .takeUntil(rac_willDeallocSignal)
   end
 
   # models
@@ -156,7 +142,7 @@ class RMXFirebaseCollection
 
   # added (model)
   def weakAddedModelSignal
-    weakAddedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
+    weakAddedSignal.takeUntil(rac_willDeallocSignal).map(->(pair) { [ transform(pair[0]), pair[1] ] }.weak!)
   end
 
   def weakAddedModelMainSignal
@@ -171,7 +157,7 @@ class RMXFirebaseCollection
 
   # removed
   def weakRemovedSignal
-    readySignal.takeUntil(rac_willDeallocSignal).take(1).then(-> { ref.rac_removedSignal })
+    readySignal.takeUntil(rac_willDeallocSignal).take(1).then(-> { ref.rac_removedSignal }.weak!)
   end
 
   def weakRemovedMainSignal
@@ -180,7 +166,7 @@ class RMXFirebaseCollection
 
   # moved
   def weakMovedSignal
-    readySignal.takeUntil(rac_willDeallocSignal).take(1).then(-> { ref.rac_movedSignal })
+    readySignal.takeUntil(rac_willDeallocSignal).take(1).then(-> { ref.rac_movedSignal }.weak!)
   end
 
   def weakMovedMainSignal
@@ -189,7 +175,7 @@ class RMXFirebaseCollection
 
   # moved (model)
   def weakMovedModelSignal
-    weakMovedSignal.map(->(pair) { [ store_transform(pair[0]), pair[1] ] }.weak!)
+    weakMovedSignal.map(->(pair) { [ transform(pair[0]), pair[1] ] }.weak!)
   end
 
   def weakMovedModelMainSignal
