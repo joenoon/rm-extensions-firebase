@@ -71,7 +71,6 @@ class RMXFirebaseModel
       dep = parts.shift
       keypath = parts.join(".")
       @deps[dep]#.setNameWithFormat("(#{rmx_object_desc}) #{name} check because of #{dep}").logAll
-      .takeUntil(rac_willDeallocSignal)
       .map(->(x) {
         # p "here"
         x.valueForKeyPath(keypath)
@@ -80,13 +79,14 @@ class RMXFirebaseModel
       .map(->(opts) {
         if opts
           # p "depend", name, "send strongSingal", "model", model, "opts", opts
-          model.get(opts).strongAlwaysSignal.takeUntil(rac_willDeallocSignal)
+          model.get(opts).strongAlwaysSignal
         else
           # p "depend", name, "send nilSignal"
           RACSignal.return(nil)
         end
       }.weak!)
       .switchToLatest#.setNameWithFormat("(#{rmx_object_desc}) #{name} result for keypath #{keypath}").logAll
+      .takeUntil(rac_willDeallocSignal)
       .replayLast
     end
     @deps[name.to_s] = the_sig
