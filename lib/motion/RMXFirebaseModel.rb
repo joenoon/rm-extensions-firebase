@@ -102,6 +102,9 @@ class RMXFirebaseModel
   end
 
   def value
+    unless loaded && root
+      raise "#{rmx_object_desc}#value called before loaded"
+    end
     root.value
   end
 
