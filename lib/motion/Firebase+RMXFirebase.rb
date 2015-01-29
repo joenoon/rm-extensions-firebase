@@ -26,5 +26,33 @@ class Firebase
       })
     })
   end
+  
+  def rac_setValueSignal(value)
+    RACSignal.createSignal(->(subscriber) {
+      setValue(value, withCompletionBlock:->(error, ref) {
+        if error
+          subscriber.sendError(error)
+        else
+          subscriber.sendNext(ref)
+          subscriber.sendCompleted
+        end
+      })
+      nil
+    })
+  end
+
+  def rac_updateChildValuesSignal(value)
+    RACSignal.createSignal(->(subscriber) {
+      updateChildValues(value, withCompletionBlock:->(error, ref) {
+        if error
+          subscriber.sendError(error)
+        else
+          subscriber.sendNext(ref)
+          subscriber.sendCompleted
+        end
+      })
+      nil
+    })
+  end
 
 end
