@@ -6,7 +6,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def weakAlwaysMainSignal
-    weakAlwaysSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakAlwaysSignal.deliverOnMainThread
   end
 
   def strongAlwaysSignal
@@ -14,7 +14,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def strongAlwaysMainSignal
-    strongAlwaysSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    strongAlwaysSignal.deliverOnMainThread
   end
 
   # once
@@ -23,7 +23,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def weakOnceMainSignal
-    weakOnceSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakOnceSignal.deliverOnMainThread
   end
 
   def strongOnceSignal
@@ -31,7 +31,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def strongOnceMainSignal
-    strongOnceSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    strongOnceSignal.deliverOnMainThread
   end
 
   # changed
@@ -40,7 +40,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def weakChangedMainSignal
-    weakChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakChangedSignal.deliverOnMainThread
   end
 
   def strongChangedSignal
@@ -48,7 +48,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def strongChangedMainSignal
-    strongChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    strongChangedSignal.deliverOnMainThread
   end
 
   # changed once
@@ -57,7 +57,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def weakOnceChangedMainSignal
-    weakOnceChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakOnceChangedSignal.deliverOnMainThread
   end
 
   def strongOnceChangedSignal
@@ -65,7 +65,7 @@ module RMXFirebaseSignalHelpers
   end
 
   def strongOnceChangedMainSignal
-    strongOnceChangedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    strongOnceChangedSignal.deliverOnMainThread
   end
 
 end

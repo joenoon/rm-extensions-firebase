@@ -104,7 +104,7 @@ class RMXFirebaseCollection
   end
 
   def weakAlwaysModelsMainSignal
-    modelsSignalForBaseSignal(weakAlwaysSignal).deliverOn(RACScheduler.mainThreadScheduler)
+    modelsSignalForBaseSignal(weakAlwaysSignal).deliverOnMainThread
   end
 
   def strongAlwaysModelsSignal
@@ -112,7 +112,7 @@ class RMXFirebaseCollection
   end
 
   def strongAlwaysModelsMainSignal
-    modelsSignalForBaseSignal(strongAlwaysSignal).deliverOn(RACScheduler.mainThreadScheduler)
+    modelsSignalForBaseSignal(strongAlwaysSignal).deliverOnMainThread
   end
 
   def strongOnceModelsSignal
@@ -120,7 +120,7 @@ class RMXFirebaseCollection
   end
 
   def strongOnceModelsMainSignal
-    modelsSignalForBaseSignal(strongOnceSignal).deliverOn(RACScheduler.mainThreadScheduler)
+    modelsSignalForBaseSignal(strongOnceSignal).deliverOnMainThread
   end
 
   # added
@@ -137,7 +137,7 @@ class RMXFirebaseCollection
   end
 
   def weakAddedMainSignal
-    weakAddedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakAddedSignal.deliverOnMainThread
   end
 
   # added (model)
@@ -152,7 +152,7 @@ class RMXFirebaseCollection
       model.strongOnceSignal.mapReplace(arr)
     }.weak!)
     .switchToLatest
-    .deliverOn(RACScheduler.mainThreadScheduler)
+    .deliverOnMainThread
   end
 
   # removed
@@ -161,7 +161,7 @@ class RMXFirebaseCollection
   end
 
   def weakRemovedMainSignal
-    weakRemovedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakRemovedSignal.deliverOnMainThread
   end
 
   # moved
@@ -170,7 +170,7 @@ class RMXFirebaseCollection
   end
 
   def weakMovedMainSignal
-    weakMovedSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakMovedSignal.deliverOnMainThread
   end
 
   # moved (model)
@@ -179,7 +179,7 @@ class RMXFirebaseCollection
   end
 
   def weakMovedModelMainSignal
-    weakMovedModelSignal.deliverOn(RACScheduler.mainThreadScheduler)
+    weakMovedModelSignal.deliverOnMainThread
   end
 
 end
